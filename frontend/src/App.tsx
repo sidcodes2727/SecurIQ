@@ -1,16 +1,195 @@
 import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useGSAP } from '@gsap/react';
 import './index.css';
 import { api } from './services/api';
 
-// ========== Layout Components ==========
+gsap.registerPlugin(ScrollTrigger);
+
+// ========== Utility: Animated Counter ==========
+
+function AnimatedCounter({ value, duration = 1.2, suffix = '' }: { value: number | string; duration?: number; suffix?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const numVal = typeof value === 'string' ? parseFloat(value) || 0 : value;
+
+  useEffect(() => {
+    if (!ref.current || isNaN(numVal)) {
+      if (ref.current) ref.current.textContent = String(value);
+      return;
+    }
+    const counter = { val: 0 };
+    gsap.to(counter, {
+      val: numVal,
+      duration,
+      ease: 'power2.out',
+      onUpdate: () => {
+        if (ref.current) ref.current.textContent = Math.round(counter.val) + suffix;
+      },
+    });
+  }, [numVal, duration, suffix, value]);
+
+  return <span ref={ref} className="counter-value">0</span>;
+}
+
+// ========== Particle Canvas ==========
+
+function ParticleBackground() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animId: number;
+    const particles: { x: number; y: number; vx: number; vy: number; r: number; a: number; p: number }[] = [];
+    const COUNT = 40;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+
+    const init = () => {
+      resize();
+      for (let i = 0; i < COUNT; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * 0.15,
+          vy: (Math.random() - 0.5) * 0.15,
+          r: Math.random() * 1.2 + 0.3,
+          a: Math.random() * 0.15 + 0.03,
+          p: Math.random() * Math.PI * 2,
+        });
+      }
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.p += 0.008;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+
+        const alpha = p.a * (0.7 + Math.sin(p.p) * 0.3);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`;
+        ctx.fill();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dx = p.x - p2.x;
+          const dy = p.y - p2.y;
+          const dist = dx * dx + dy * dy;
+          if (dist < 15000) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = `rgba(34, 211, 238, ${0.02 * (1 - dist / 15000)})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      }
+      animId = requestAnimationFrame(draw);
+    };
+
+    init();
+    draw();
+    window.addEventListener('resize', resize);
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
+  }, []);
+
+  return <canvas ref={canvasRef} className="particle-canvas" />;
+}
+
+// ========== Ticker ==========
+
+function LiveTicker() {
+  const items = [
+    'AES-256-GCM', 'IKEv2', 'ESP TUNNEL', 'SHA-384',
+    'DH GROUP 20', 'PFS ENABLED', 'NAT-T', 'X.509 CERT',
+    'HMAC-SHA256', 'ECP-384', 'ANTI-REPLAY', 'RSA-4096',
+  ];
+  return (
+    <div className="ticker">
+      <div className="ticker-inner">
+        {[...items, ...items].map((item, i) => (
+          <span className="ticker-item" key={i}>
+            <span className="ticker-dot" />
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========== GSAP Page Wrapper ==========
+
+function AnimatedPage({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    if (!ref.current) return;
+
+    gsap.fromTo(ref.current,
+      { opacity: 0, y: 16 },
+      { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' }
+    );
+
+    // Stagger cards
+    const cards = ref.current.querySelectorAll('.card, .stat-card, .finding-card');
+    if (cards.length) {
+      gsap.fromTo(cards,
+        { opacity: 0, y: 20 },
+        { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', stagger: 0.05, delay: 0.1 }
+      );
+    }
+
+    // Animate score fills
+    const fills = ref.current.querySelectorAll('.score-fill');
+    fills.forEach(fill => {
+      gsap.fromTo(fill,
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.8, ease: 'power2.out', delay: 0.4, transformOrigin: 'left center' }
+      );
+    });
+
+  }, { scope: ref });
+
+  return <div ref={ref} className="page-container">{children}</div>;
+}
+
+// ========== Sidebar ==========
 
 function Sidebar() {
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  useGSAP(() => {
+    if (!sidebarRef.current) return;
+    const items = sidebarRef.current.querySelectorAll('.nav-item');
+    gsap.fromTo(items,
+      { opacity: 0, x: -12 },
+      { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out', stagger: 0.03, delay: 0.2 }
+    );
+  }, { scope: sidebarRef });
+
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" ref={sidebarRef}>
       <div className="sidebar-logo">
         <div className="logo-icon">🛡️</div>
-        <h1>VPN Analyzer</h1>
+        <h1>Secur<span>IQ</span></h1>
       </div>
       <nav className="sidebar-nav">
         <div className="nav-section">
@@ -47,9 +226,17 @@ function Sidebar() {
           </NavLink>
         </div>
       </nav>
+      <div className="sidebar-footer">
+        <div className="sidebar-pulse">
+          <span className="pulse-dot" />
+          <span>System Active</span>
+        </div>
+      </div>
     </aside>
   );
 }
+
+// ========== Header ==========
 
 function Header({ title }: { title: string }) {
   const [health, setHealth] = useState<any>(null);
@@ -61,22 +248,22 @@ function Header({ title }: { title: string }) {
   return (
     <header className="header">
       <div className="header-left">
-        <h2 className="header-title">{title}</h2>
+        <h2 className="header-title glitch-text" data-text={title}>{title}</h2>
       </div>
       <div className="header-right">
         <div className="status-badge">
-          <div className={`status-dot ${health ? 'online' : ''}`}></div>
-          <span>{health ? 'Backend Online' : 'Connecting...'}</span>
+          <div className={`status-dot ${health ? 'online' : ''}`} />
+          <span>{health ? 'Online' : 'Connecting...'}</span>
         </div>
         <div className="status-badge">
-          <span>🤖 Model: {health?.model_trained ? '✅ Trained' : '⏳ Not Ready'}</span>
+          <span>Model: {health?.model_trained ? '✅' : '⏳'}</span>
         </div>
       </div>
     </header>
   );
 }
 
-// ========== Page Components ==========
+// ========== Dashboard ==========
 
 function DashboardPage() {
   const [analyses, setAnalyses] = useState<any[]>([]);
@@ -89,50 +276,89 @@ function DashboardPage() {
   }, []);
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Dashboard" />
+
+      {/* Hero */}
+      <div className="hero-section">
+        <h1 className="hero-title">
+          IPsec VPN <span className="accent">Analyzer</span>
+        </h1>
+        <p className="hero-subtitle">
+          AI-powered protocol analysis, encrypted traffic classification, and transparent security scoring.
+        </p>
+      </div>
+
+      <LiveTicker />
+
+      {/* Stats */}
       <div className="stats-grid">
         <div className="stat-card" onClick={() => navigate('/upload')} style={{ cursor: 'pointer' }}>
           <div className="stat-icon">📁</div>
-          <div className="stat-value">{health?.sample_files || 0}</div>
-          <div className="stat-label">Sample Files Available</div>
-          <div className="stat-glow" style={{ background: 'var(--accent-cyan)' }}></div>
+          <div className="stat-value"><AnimatedCounter value={health?.sample_files || 0} /></div>
+          <div className="stat-label">Sample Files</div>
+          <div className="stat-glow" style={{ background: 'var(--accent)' }} />
         </div>
         <div className="stat-card">
           <div className="stat-icon">🔍</div>
-          <div className="stat-value">{analyses.length}</div>
-          <div className="stat-label">Analyses Completed</div>
-          <div className="stat-glow" style={{ background: 'var(--accent-green)' }}></div>
+          <div className="stat-value"><AnimatedCounter value={analyses.length} /></div>
+          <div className="stat-label">Analyses Done</div>
+          <div className="stat-glow" style={{ background: 'var(--accent2)' }} />
         </div>
         <div className="stat-card">
           <div className="stat-icon">⚠️</div>
           <div className="stat-value">
             {analyses.length > 0
-              ? analyses.reduce((sum, a) => sum + (a.findings_count || 0), 0)
+              ? <AnimatedCounter value={analyses.reduce((sum, a) => sum + (a.findings_count || 0), 0)} />
               : '—'}
           </div>
           <div className="stat-label">Total Findings</div>
-          <div className="stat-glow" style={{ background: 'var(--accent-orange)' }}></div>
+          <div className="stat-glow" style={{ background: 'var(--sev-medium)' }} />
         </div>
         <div className="stat-card">
           <div className="stat-icon">🤖</div>
-          <div className="stat-value">{health?.model_trained ? 'Ready' : 'N/A'}</div>
-          <div className="stat-label">ML Model Status</div>
-          <div className="stat-glow" style={{ background: 'var(--accent-purple)' }}></div>
+          <div className="stat-value" style={{ color: health?.model_trained ? 'var(--accent2)' : 'var(--text-tertiary)' }}>
+            {health?.model_trained ? 'Ready' : 'N/A'}
+          </div>
+          <div className="stat-label">ML Model</div>
+          <div className="stat-glow" style={{ background: 'var(--accent)' }} />
         </div>
       </div>
 
+      {/* Quick Actions + Recent Analyses */}
       <div className="grid-2">
         <div className="card">
           <div className="card-header">
-            <div className="card-title">🚀 Quick Start</div>
+            <div className="card-title">⚡ Quick Actions</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            <button className="btn btn-primary" onClick={() => navigate('/upload')}>
-              📁 Upload PCAP for Analysis
+          <div className="quick-actions">
+            <button className="quick-action-btn" onClick={() => navigate('/upload')}>
+              <span className="action-icon">📤</span>
+              <div>
+                <div>Upload PCAP</div>
+                <div className="action-label">Analyze a capture file</div>
+              </div>
             </button>
-            <button className="btn btn-secondary" onClick={() => navigate('/dataset')}>
-              🗃️ View Dataset & Model Info
+            <button className="quick-action-btn" onClick={() => navigate('/dataset')}>
+              <span className="action-icon">🗃️</span>
+              <div>
+                <div>Dataset & Model</div>
+                <div className="action-label">View ML pipeline</div>
+              </div>
+            </button>
+            <button className="quick-action-btn" onClick={() => navigate('/security')}>
+              <span className="action-icon">🔒</span>
+              <div>
+                <div>Security Check</div>
+                <div className="action-label">View assessments</div>
+              </div>
+            </button>
+            <button className="quick-action-btn" onClick={() => navigate('/reports')}>
+              <span className="action-icon">📋</span>
+              <div>
+                <div>Reports</div>
+                <div className="action-label">Executive & technical</div>
+              </div>
             </button>
           </div>
         </div>
@@ -142,21 +368,25 @@ function DashboardPage() {
             <div className="card-title">📋 Recent Analyses</div>
           </div>
           {analyses.length === 0 ? (
-            <div className="empty-state">
+            <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
               <p>No analyses yet. Upload a PCAP to get started.</p>
             </div>
           ) : (
             <table className="data-table">
               <thead>
-                <tr><th>ID</th><th>Score</th><th>Risk</th><th>Action</th></tr>
+                <tr><th>ID</th><th>Score</th><th>Risk</th><th></th></tr>
               </thead>
               <tbody>
                 {analyses.slice(0, 5).map(a => (
                   <tr key={a.analysis_id}>
                     <td>{a.analysis_id}</td>
                     <td>{a.security_score}/100</td>
-                    <td><span className={`badge badge-${a.risk_level?.includes('Critical') ? 'critical' : a.risk_level?.includes('High') ? 'high' : a.risk_level?.includes('Moderate') ? 'medium' : 'success'}`}>{a.risk_level}</span></td>
-                    <td><button className="btn btn-sm btn-secondary" onClick={() => navigate(`/analysis?id=${a.analysis_id}`)}>View</button></td>
+                    <td>
+                      <span className={`badge badge-${a.risk_level?.includes('Critical') ? 'critical' : a.risk_level?.includes('High') ? 'high' : a.risk_level?.includes('Moderate') ? 'medium' : 'success'}`}>
+                        {a.risk_level}
+                      </span>
+                    </td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analysis?id=${a.analysis_id}`)}>View →</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -165,21 +395,20 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="card mt-md">
-        <div className="card-header">
-          <div className="card-title">ℹ️ About This System</div>
-        </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.8' }}>
-          The <strong>AI-Powered IPsec VPN Protocol Analyzer</strong> is a comprehensive security assessment framework that
-          analyzes IPsec VPN traffic from PCAP files. It uses protocol parsing for observable VPN parameters,
+      {/* About */}
+      <div className="info-banner mt-md">
+        <span className="banner-icon">ℹ️</span>
+        <p>
+          The <strong>AI-Powered IPsec VPN Protocol Analyzer</strong> analyzes IPsec VPN traffic from PCAP files using protocol parsing for observable VPN parameters,
           machine learning for encrypted traffic classification, and transparent rule-based scoring for security assessment.
-          The system identifies IKE version, encryption algorithms, DH groups, PFS status, NAT-T, and more—marking
-          unobservable fields honestly instead of guessing.
+          It identifies IKE version, encryption algorithms, DH groups, PFS status, NAT-T, and more.
         </p>
       </div>
-    </div>
+    </AnimatedPage>
   );
 }
+
+// ========== Upload Page ==========
 
 function UploadPage() {
   const [uploads, setUploads] = useState<any>({ uploads: [], samples: [] });
@@ -199,9 +428,7 @@ function UploadPage() {
       const res = await api.uploadFile(file);
       setResult(res);
       api.listUploads().then(setUploads);
-    } catch (e: any) {
-      alert(e.message);
-    }
+    } catch (e: any) { alert(e.message); }
     setUploading(false);
   };
 
@@ -210,14 +437,12 @@ function UploadPage() {
     try {
       const res = await api.analyze(fileId);
       navigate(`/analysis?id=${res.analysis_id}`);
-    } catch (e: any) {
-      alert('Analysis failed: ' + e.message);
-    }
+    } catch (e: any) { alert('Analysis failed: ' + e.message); }
     setAnalyzing(null);
   };
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Upload PCAP" />
 
       <div
@@ -225,8 +450,7 @@ function UploadPage() {
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => {
-          e.preventDefault();
-          setDragOver(false);
+          e.preventDefault(); setDragOver(false);
           const file = e.dataTransfer.files[0];
           if (file) handleUpload(file);
         }}
@@ -234,10 +458,7 @@ function UploadPage() {
           const input = document.createElement('input');
           input.type = 'file';
           input.accept = '.pcap,.pcapng,.cap';
-          input.onchange = (e: any) => {
-            const file = e.target.files[0];
-            if (file) handleUpload(file);
-          };
+          input.onchange = (e: any) => { const file = e.target.files[0]; if (file) handleUpload(file); };
           input.click();
         }}
       >
@@ -248,67 +469,55 @@ function UploadPage() {
 
       {result && (
         <div className="card mt-md">
-          <div className="card-title" style={{ color: 'var(--accent-green)' }}>
-            ✅ {result.filename} uploaded successfully ({(result.size / 1024).toFixed(1)} KB)
+          <div className="card-title" style={{ color: 'var(--accent2)' }}>
+            ✅ {result.filename} uploaded ({(result.size / 1024).toFixed(1)} KB)
           </div>
-          <button className="btn btn-primary mt-md" onClick={() => handleAnalyze(result.file_id)}>
-            🔍 Analyze Now
-          </button>
+          <button className="btn btn-primary mt-sm" onClick={() => handleAnalyze(result.file_id)}>🔍 Analyze Now</button>
         </div>
       )}
 
       <div className="grid-2 mt-md">
         <div className="card">
-          <div className="card-header">
-            <div className="card-title">📁 Your Uploads</div>
-          </div>
+          <div className="card-header"><div className="card-title">📁 Your Uploads</div></div>
           {uploads.uploads?.length === 0 ? (
-            <div className="empty-state"><p>No files uploaded yet.</p></div>
+            <div className="empty-state" style={{ padding: 'var(--space-lg)' }}><p>No files uploaded yet.</p></div>
           ) : (
             uploads.uploads?.map((f: any) => (
               <div key={f.id} className="prop-item">
                 <span className="prop-label">{f.original_name}</span>
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={() => handleAnalyze(f.id)}
-                  disabled={analyzing === f.id}
-                >
-                  {analyzing === f.id ? '⏳ Analyzing...' : '🔍 Analyze'}
+                <button className="btn btn-sm btn-primary" onClick={() => handleAnalyze(f.id)} disabled={analyzing === f.id}>
+                  {analyzing === f.id ? '⏳...' : '🔍 Analyze'}
                 </button>
               </div>
             ))
           )}
         </div>
-
         <div className="card">
           <div className="card-header">
             <div className="card-title">🧪 Sample Files</div>
             <div className="card-subtitle">Pre-generated test scenarios</div>
           </div>
           {uploads.samples?.length === 0 ? (
-            <div className="empty-state"><p>No samples yet. They'll be generated on backend startup.</p></div>
+            <div className="empty-state" style={{ padding: 'var(--space-lg)' }}><p>No samples yet.</p></div>
           ) : (
             uploads.samples?.map((f: any) => (
               <div key={f.id} className="prop-item">
                 <span className="prop-label">{f.original_name}</span>
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={() => handleAnalyze(f.id)}
-                  disabled={analyzing === f.id}
-                >
-                  {analyzing === f.id ? '⏳ Analyzing...' : '🔍 Analyze'}
+                <button className="btn btn-sm btn-primary" onClick={() => handleAnalyze(f.id)} disabled={analyzing === f.id}>
+                  {analyzing === f.id ? '⏳...' : '🔍 Analyze'}
                 </button>
               </div>
             ))
           )}
         </div>
       </div>
-    </div>
+    </AnimatedPage>
   );
 }
 
+// ========== Analysis Page ==========
+
 function AnalysisPage() {
-  const [analysisId, setAnalysisId] = useState('');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -317,7 +526,6 @@ function AnalysisPage() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id') || localStorage.getItem('lastAnalysisId');
     if (id) {
-      setAnalysisId(id);
       localStorage.setItem('lastAnalysisId', id);
       loadAnalysis(id);
     }
@@ -325,38 +533,25 @@ function AnalysisPage() {
 
   const loadAnalysis = async (id: string) => {
     setLoading(true);
-    try {
-      const res = await api.getAnalysis(id);
-      setData(res);
-    } catch (e: any) {
-      alert(e.message);
-    }
+    try { setData(await api.getAnalysis(id)); } catch (e: any) { alert(e.message); }
     setLoading(false);
   };
 
-  if (loading) return <div className="page-container"><Header title="VPN Analysis" /><div className="loading-spinner"><div className="spinner"></div><p>Analyzing packets...</p></div></div>;
+  if (loading) return <AnimatedPage><Header title="VPN Analysis" /><div className="loading-spinner"><div className="spinner" /><p>Analyzing packets...</p></div></AnimatedPage>;
 
   if (!data) return (
-    <div className="page-container">
-      <Header title="VPN Analysis" />
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-icon">🔍</div>
-          <h3>No Analysis Selected</h3>
-          <p>Upload and analyze a PCAP file first, or select a previous analysis.</p>
-        </div>
-      </div>
-    </div>
+    <AnimatedPage><Header title="VPN Analysis" />
+      <div className="card"><div className="empty-state"><div className="empty-icon">🔍</div><h3>No Analysis Selected</h3><p>Upload and analyze a PCAP file first.</p></div></div>
+    </AnimatedPage>
   );
 
   const profile = data.ipsec_analysis?.vpn_profile || {};
   const ike = data.ipsec_analysis?.ike_analysis || {};
   const esp = data.ipsec_analysis?.esp_analysis || {};
   const nat = data.ipsec_analysis?.nat_t_analysis || {};
-  const ipInfo = data.ipsec_analysis?.ip_analysis || {};
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="VPN Analysis" />
       <div className="tabs">
         {['overview', 'ike', 'esp', 'packets'].map(tab => (
@@ -371,32 +566,45 @@ function AnalysisPage() {
           <div className="card">
             <div className="card-header"><div className="card-title">🛡️ VPN Profile</div></div>
             <ul className="prop-list">
-              <li className="prop-item"><span className="prop-label">IPsec Protocol</span><span className={`prop-value ${profile.ipsec_protocol?.includes('Not') ? 'unknown' : ''}`}>{profile.ipsec_protocol?.join(', ')}</span></li>
-              <li className="prop-item"><span className="prop-label">IKE Version</span><span className={`prop-value ${profile.ike_version === 'Not Observable' ? 'unknown' : ''}`}>{profile.ike_version}</span></li>
-              <li className="prop-item"><span className="prop-label">Mode</span><span className={`prop-value ${profile.mode === 'Not Observable' ? 'unknown' : ''}`}>{profile.mode}</span></li>
-              <li className="prop-item"><span className="prop-label">Encryption</span><span className={`prop-value ${profile.encryption === 'Not Observable' ? 'unknown' : ''}`}>{profile.encryption}</span></li>
-              <li className="prop-item"><span className="prop-label">Integrity</span><span className={`prop-value ${profile.integrity === 'Not Observable' ? 'unknown' : ''}`}>{profile.integrity}</span></li>
-              <li className="prop-item"><span className="prop-label">DH Group</span><span className={`prop-value ${profile.dh_group === 'Not Observable' ? 'unknown' : ''}`}>{profile.dh_group}</span></li>
-              <li className="prop-item"><span className="prop-label">PFS</span><span className={`prop-value ${profile.pfs === 'Not Observable' ? 'unknown' : ''}`}>{String(profile.pfs)}</span></li>
-              <li className="prop-item"><span className="prop-label">NAT-T</span><span className="prop-value">{profile.nat_t ? '✅ Detected' : '❌ Not Detected'}</span></li>
-              <li className="prop-item"><span className="prop-label">IP Version</span><span className="prop-value">{profile.ip_version}</span></li>
-              <li className="prop-item"><span className="prop-label">Total SAs</span><span className="prop-value">{profile.total_sas}</span></li>
+              {[
+                ['IPsec Protocol', profile.ipsec_protocol?.join(', ')],
+                ['IKE Version', profile.ike_version],
+                ['Mode', profile.mode],
+                ['Encryption', profile.encryption],
+                ['Integrity', profile.integrity],
+                ['DH Group', profile.dh_group],
+                ['PFS', String(profile.pfs)],
+                ['NAT-T', profile.nat_t ? '✅ Detected' : '❌ Not Detected'],
+                ['IP Version', profile.ip_version],
+                ['Total SAs', profile.total_sas],
+              ].map(([label, val]) => (
+                <li className="prop-item" key={label as string}>
+                  <span className="prop-label">{label}</span>
+                  <span className={`prop-value ${String(val) === 'Not Observable' ? 'unknown' : ''}`}>{val}</span>
+                </li>
+              ))}
             </ul>
           </div>
-
           <div className="card">
-            <div className="card-header"><div className="card-title">📊 Capture Statistics</div></div>
+            <div className="card-header"><div className="card-title">📊 Capture Stats</div></div>
             <ul className="prop-list">
-              <li className="prop-item"><span className="prop-label">Total Packets</span><span className="prop-value">{data.parsed_metadata?.total_packets}</span></li>
-              <li className="prop-item"><span className="prop-label">Parsed Packets</span><span className="prop-value">{data.parsed_metadata?.parsed_packets}</span></li>
-              <li className="prop-item"><span className="prop-label">IKE Packets</span><span className="prop-value">{data.parsed_summary?.ike || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">ESP Packets</span><span className="prop-value">{data.parsed_summary?.esp || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">AH Packets</span><span className="prop-value">{data.parsed_summary?.ah || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">NAT-T IKE</span><span className="prop-value">{data.parsed_summary?.ike_natt || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">IPv4</span><span className="prop-value">{data.parsed_summary?.ipv4 || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">IPv6</span><span className="prop-value">{data.parsed_summary?.ipv6 || 0}</span></li>
-              <li className="prop-item"><span className="prop-label">Parse Time</span><span className="prop-value">{data.parsed_metadata?.parse_duration_ms}ms</span></li>
-              <li className="prop-item"><span className="prop-label">File Size</span><span className="prop-value">{(data.parsed_metadata?.file_size / 1024).toFixed(1)} KB</span></li>
+              {[
+                ['Total Packets', data.parsed_metadata?.total_packets],
+                ['Parsed Packets', data.parsed_metadata?.parsed_packets],
+                ['IKE Packets', data.parsed_summary?.ike || 0],
+                ['ESP Packets', data.parsed_summary?.esp || 0],
+                ['AH Packets', data.parsed_summary?.ah || 0],
+                ['NAT-T IKE', data.parsed_summary?.ike_natt || 0],
+                ['IPv4', data.parsed_summary?.ipv4 || 0],
+                ['IPv6', data.parsed_summary?.ipv6 || 0],
+                ['Parse Time', `${data.parsed_metadata?.parse_duration_ms}ms`],
+                ['File Size', `${(data.parsed_metadata?.file_size / 1024).toFixed(1)} KB`],
+              ].map(([label, val]) => (
+                <li className="prop-item" key={label as string}>
+                  <span className="prop-label">{label}</span>
+                  <span className="prop-value">{val}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -407,7 +615,7 @@ function AnalysisPage() {
           <div className="card mb-md">
             <div className="card-header"><div className="card-title">🔑 IKE Negotiation</div></div>
             {!ike.detected ? (
-              <p className="text-muted">No IKE packets found in this capture. Algorithm details cannot be determined from ESP traffic alone.</p>
+              <p className="text-muted">No IKE packets found in this capture.</p>
             ) : (
               <>
                 <ul className="prop-list">
@@ -452,19 +660,10 @@ function AnalysisPage() {
               <p className="text-muted">No ESP traffic detected.</p>
             ) : (
               <table className="data-table">
-                <thead>
-                  <tr><th>SPI</th><th>Packets</th><th>Duration</th><th>Avg Size</th><th>Seq Range</th><th>Gaps</th></tr>
-                </thead>
+                <thead><tr><th>SPI</th><th>Packets</th><th>Duration</th><th>Avg Size</th><th>Seq Range</th><th>Gaps</th></tr></thead>
                 <tbody>
                   {esp.sa_info?.map((sa: any, i: number) => (
-                    <tr key={i}>
-                      <td>{sa.spi}</td>
-                      <td>{sa.packet_count}</td>
-                      <td>{sa.duration?.toFixed(2)}s</td>
-                      <td>{sa.avg_payload_size} B</td>
-                      <td>{sa.min_seq} - {sa.max_seq}</td>
-                      <td>{sa.seq_gaps?.length || 0}</td>
-                    </tr>
+                    <tr key={i}><td>{sa.spi}</td><td>{sa.packet_count}</td><td>{sa.duration?.toFixed(2)}s</td><td>{sa.avg_payload_size} B</td><td>{sa.min_seq} - {sa.max_seq}</td><td>{sa.seq_gaps?.length || 0}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -486,24 +685,24 @@ function AnalysisPage() {
 
       {activeTab === 'packets' && (
         <div className="card">
-          <div className="card-title">📦 Packet Details</div>
-          <p className="text-muted text-sm mb-md">Timeline events from the capture</p>
+          <div className="card-title">📦 Packet Timeline</div>
+          <p className="text-muted text-sm mb-md">Events from the capture</p>
           {data.ipsec_analysis?.timeline?.slice(0, 30).map((evt: any, i: number) => (
             <div key={i} className="finding-card">
               <div className="finding-header">
                 <span className={`badge ${evt.type === 'IKE' ? 'badge-low' : 'badge-info'}`}>{evt.type}</span>
                 <span className="finding-title">{evt.description}</span>
               </div>
-              <div className="finding-evidence">
-                {evt.src} → {evt.dst}
-              </div>
+              <div className="finding-evidence">{evt.src} → {evt.dst}</div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </AnimatedPage>
   );
 }
+
+// ========== Classification Page ==========
 
 function ClassificationPage() {
   const [analysisId, setAnalysisId] = useState('');
@@ -514,35 +713,24 @@ function ClassificationPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id') || localStorage.getItem('lastAnalysisId');
-    if (id) { 
-      setAnalysisId(id); 
-      localStorage.setItem('lastAnalysisId', id);
-      loadClassification(id); 
-    }
+    if (id) { setAnalysisId(id); localStorage.setItem('lastAnalysisId', id); loadClassification(id); }
     api.getModelInfo().then(setModelInfo).catch(() => {});
   }, []);
 
   const loadClassification = async (id: string) => {
     setLoading(true);
-    try {
-      const res = await api.classifyTraffic(id);
-      setData(res);
-    } catch (e: any) { alert(e.message); }
+    try { setData(await api.classifyTraffic(id)); } catch (e: any) { alert(e.message); }
     setLoading(false);
   };
 
   const trafficColors: Record<string, string> = {
-    icmp: 'var(--accent-cyan)',
-    web: 'var(--accent-green)',
-    voip: 'var(--accent-purple)',
-    video: 'var(--accent-orange)',
-    email: 'var(--accent-yellow)',
-    chat: '#ff69b4',
-    file_transfer: 'var(--accent-red)',
+    icmp: 'var(--accent)', web: 'var(--accent2)', voip: 'var(--accent-dim)',
+    video: 'var(--accent2-dim)', email: 'var(--gray-200)', chat: 'var(--accent-muted)',
+    file_transfer: 'var(--gray-300)',
   };
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Traffic Classification" />
 
       {!data?.classification?.length ? (
@@ -560,9 +748,7 @@ function ClassificationPage() {
             {data.classification.map((c: any, i: number) => (
               <div className="stat-card" key={i}>
                 <div className="stat-icon" style={{ fontSize: '20px' }}>
-                  {c.predicted_class === 'web' ? '🌐' : c.predicted_class === 'voip' ? '📞' :
-                   c.predicted_class === 'video' ? '🎬' : c.predicted_class === 'email' ? '📧' :
-                   c.predicted_class === 'chat' ? '💬' : c.predicted_class === 'icmp' ? '📡' : '📁'}
+                  {c.predicted_class === 'web' ? '🌐' : c.predicted_class === 'voip' ? '📞' : c.predicted_class === 'video' ? '🎬' : c.predicted_class === 'email' ? '📧' : c.predicted_class === 'chat' ? '💬' : c.predicted_class === 'icmp' ? '📡' : '📁'}
                 </div>
                 <div className="stat-value" style={{ color: trafficColors[c.predicted_class] || 'var(--text-primary)', fontSize: '18px' }}>
                   {c.predicted_class.replace('_', ' ').toUpperCase()}
@@ -571,25 +757,20 @@ function ClassificationPage() {
                 <div style={{ marginTop: 'var(--space-sm)' }}>
                   <div className="score-bar-container">
                     <div className="score-bar">
-                      <div className="score-fill" style={{
-                        width: `${c.confidence * 100}%`,
-                        background: trafficColors[c.predicted_class] || 'var(--accent-cyan)',
-                      }}></div>
+                      <div className="score-fill" style={{ width: `${c.confidence * 100}%`, background: trafficColors[c.predicted_class] || 'var(--accent)' }} />
                     </div>
                     <span className="score-value">{(c.confidence * 100).toFixed(1)}%</span>
                   </div>
                 </div>
-                <div className="stat-glow" style={{ background: trafficColors[c.predicted_class] || 'var(--accent-cyan)' }}></div>
+                <div className="stat-glow" style={{ background: trafficColors[c.predicted_class] || 'var(--accent)' }} />
               </div>
             ))}
           </div>
 
-          <div className="card mt-md">
+          <div className="card">
             <div className="card-title">📊 Detailed Predictions</div>
             <table className="data-table mt-md">
-              <thead>
-                <tr><th>SPI</th><th>Prediction</th><th>Confidence</th><th>2nd Choice</th><th>3rd Choice</th></tr>
-              </thead>
+              <thead><tr><th>SPI</th><th>Prediction</th><th>Confidence</th><th>2nd Choice</th><th>3rd Choice</th></tr></thead>
               <tbody>
                 {data.classification.map((c: any, i: number) => (
                   <tr key={i}>
@@ -608,9 +789,7 @@ function ClassificationPage() {
 
       {modelInfo && (
         <div className="card mt-md">
-          <div className="card-header">
-            <div className="card-title">🧠 Model Information</div>
-          </div>
+          <div className="card-header"><div className="card-title">🧠 Model Info</div></div>
           <div className="grid-2">
             <ul className="prop-list">
               <li className="prop-item"><span className="prop-label">Model Type</span><span className="prop-value">{modelInfo.model_type}</span></li>
@@ -621,23 +800,19 @@ function ClassificationPage() {
                 <>
                   <li className="prop-item"><span className="prop-label">Accuracy</span><span className="prop-value text-green">{(modelInfo.metrics.accuracy * 100).toFixed(1)}%</span></li>
                   <li className="prop-item"><span className="prop-label">F1 Score</span><span className="prop-value text-green">{(modelInfo.metrics.f1_score * 100).toFixed(1)}%</span></li>
-                  <li className="prop-item"><span className="prop-label">CV Accuracy</span><span className="prop-value">{(modelInfo.metrics.cv_mean_accuracy * 100).toFixed(1)}% ± {(modelInfo.metrics.cv_std_accuracy * 100).toFixed(1)}%</span></li>
                 </>
               )}
             </ul>
             <div>
-              <h4 style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>Top Feature Importances</h4>
-              {modelInfo.feature_importance?.slice(0, 10).map((f: any, i: number) => (
+              <h4 style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>Feature Importance</h4>
+              {modelInfo.feature_importance?.slice(0, 8).map((f: any, i: number) => (
                 <div key={i} style={{ marginBottom: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
                     <span className="text-mono">{f.feature}</span>
                     <span className="text-accent">{(f.importance * 100).toFixed(1)}%</span>
                   </div>
                   <div className="score-bar">
-                    <div className="score-fill" style={{
-                      width: `${f.importance * 100 / (modelInfo.feature_importance[0]?.importance || 1)}%`,
-                      background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-green))',
-                    }}></div>
+                    <div className="score-fill" style={{ width: `${f.importance * 100 / (modelInfo.feature_importance[0]?.importance || 1)}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent2))' }} />
                   </div>
                 </div>
               ))}
@@ -645,9 +820,11 @@ function ClassificationPage() {
           </div>
         </div>
       )}
-    </div>
+    </AnimatedPage>
   );
 }
+
+// ========== Security Page ==========
 
 function SecurityPage() {
   const [data, setData] = useState<any>(null);
@@ -658,43 +835,29 @@ function SecurityPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id') || localStorage.getItem('lastAnalysisId');
-    if (id) {
-      localStorage.setItem('lastAnalysisId', id);
-      loadSecurity(id);
-    }
+    if (id) { localStorage.setItem('lastAnalysisId', id); loadSecurity(id); }
   }, []);
 
   const loadSecurity = async (id: string) => {
     setLoading(true);
     try {
-      const [sec, tm] = await Promise.all([
-        api.getSecurity(id),
-        api.getThreatMatrix(id),
-      ]);
-      setData(sec);
-      setThreatMatrix(tm);
+      const [sec, tm] = await Promise.all([api.getSecurity(id), api.getThreatMatrix(id)]);
+      setData(sec); setThreatMatrix(tm);
     } catch (e: any) { alert(e.message); }
     setLoading(false);
   };
 
   if (!data) return (
-    <div className="page-container">
-      <Header title="Security Assessment" />
+    <AnimatedPage><Header title="Security Assessment" />
       <div className="card"><div className="empty-state"><div className="empty-icon">🔒</div><h3>No Assessment Available</h3><p>Analyze a PCAP file first.</p></div></div>
-    </div>
+    </AnimatedPage>
   );
 
-  const scoreColor = (score: number) =>
-    score >= 85 ? 'var(--score-excellent)' : score >= 70 ? 'var(--score-good)' :
-    score >= 50 ? 'var(--score-moderate)' : score >= 30 ? 'var(--score-poor)' : 'var(--score-critical)';
-
-  const severityBadge = (sev: string) => {
-    const map: Record<string, string> = { Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low', Informational: 'info' };
-    return map[sev] || 'info';
-  };
+  const scoreColor = (s: number) => s >= 85 ? 'var(--score-excellent)' : s >= 70 ? 'var(--score-good)' : s >= 50 ? 'var(--score-moderate)' : s >= 30 ? 'var(--score-poor)' : 'var(--score-critical)';
+  const sevBadge = (sev: string) => ({ Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low', Informational: 'info' }[sev] || 'info');
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Security Assessment" />
       <div className="tabs">
         {['overview', 'findings', 'threats', 'recommendations'].map(tab => (
@@ -706,16 +869,14 @@ function SecurityPage() {
 
       {activeTab === 'overview' && (
         <>
-          <div className="grid-3" style={{ marginBottom: 'var(--space-lg)' }}>
+          <div className="grid-3 mb-lg">
             <div className="card" style={{ textAlign: 'center' }}>
               <div className="risk-gauge">
-                <div style={{ fontSize: '64px', fontWeight: '800', fontFamily: 'var(--font-mono)', color: scoreColor(data.overall_score), lineHeight: 1 }}>
-                  {data.overall_score}
+                <div style={{ fontSize: '60px', fontWeight: '800', fontFamily: 'var(--font-mono)', color: scoreColor(data.overall_score), lineHeight: 1, letterSpacing: '-2px' }}>
+                  <AnimatedCounter value={data.overall_score} duration={1.5} />
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>out of 100</div>
-                <div className="gauge-label" style={{ color: scoreColor(data.overall_score), marginTop: 'var(--space-sm)' }}>
-                  {data.risk_level}
-                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '2px' }}>out of 100</div>
+                <div className="gauge-label" style={{ color: scoreColor(data.overall_score), marginTop: 'var(--space-sm)' }}>{data.risk_level}</div>
               </div>
             </div>
             <div className="card" style={{ gridColumn: 'span 2' }}>
@@ -724,12 +885,10 @@ function SecurityPage() {
                 <div key={key} style={{ marginBottom: 'var(--space-md)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                     <span>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-                    <span style={{ color: scoreColor(cat.score), fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                      {cat.score}/100 — {cat.rating}
-                    </span>
+                    <span style={{ color: scoreColor(cat.score), fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{cat.score}/100 — {cat.rating}</span>
                   </div>
                   <div className="score-bar">
-                    <div className="score-fill" style={{ width: `${cat.score}%`, background: scoreColor(cat.score) }}></div>
+                    <div className="score-fill" style={{ width: `${cat.score}%`, background: scoreColor(cat.score) }} />
                   </div>
                 </div>
               ))}
@@ -758,13 +917,11 @@ function SecurityPage() {
 
       {activeTab === 'findings' && (
         <div>
-          <div className="mb-md" style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            {data.findings?.length || 0} findings discovered
-          </div>
+          <div className="mb-md" style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{data.findings?.length || 0} findings discovered</div>
           {data.findings?.map((f: any, i: number) => (
             <div className="finding-card" key={i}>
               <div className="finding-header">
-                <span className={`badge badge-${severityBadge(f.severity)}`}>{f.severity}</span>
+                <span className={`badge badge-${sevBadge(f.severity)}`}>{f.severity}</span>
                 <span className="finding-id">{f.id}</span>
                 <span className="finding-title">{f.title}</span>
               </div>
@@ -787,7 +944,7 @@ function SecurityPage() {
             </ul>
           </div>
           <table className="data-table">
-            <thead><tr><th>Threat</th><th>MITRE</th><th>Likelihood</th><th>Impact</th><th>Risk Score</th><th>Level</th></tr></thead>
+            <thead><tr><th>Threat</th><th>MITRE</th><th>Likelihood</th><th>Impact</th><th>Risk</th><th>Level</th></tr></thead>
             <tbody>
               {threatMatrix.threats?.map((t: any, i: number) => (
                 <tr key={i}>
@@ -807,7 +964,7 @@ function SecurityPage() {
       {activeTab === 'recommendations' && (
         <div>
           {data.recommendations?.length === 0 ? (
-            <div className="card"><div className="empty-state"><div className="empty-icon">✅</div><h3>No Critical Recommendations</h3><p>The VPN configuration meets security standards.</p></div></div>
+            <div className="card"><div className="empty-state"><div className="empty-icon">✅</div><h3>No Critical Recommendations</h3><p>VPN configuration meets standards.</p></div></div>
           ) : (
             data.recommendations?.map((r: any, i: number) => (
               <div className="finding-card" key={i}>
@@ -823,9 +980,11 @@ function SecurityPage() {
           )}
         </div>
       )}
-    </div>
+    </AnimatedPage>
   );
 }
+
+// ========== Reports Page ==========
 
 function ReportsPage() {
   const [executive, setExecutive] = useState<any>(null);
@@ -843,16 +1002,15 @@ function ReportsPage() {
   }, []);
 
   if (!executive) return (
-    <div className="page-container">
-      <Header title="Reports" />
-      <div className="card"><div className="empty-state"><div className="empty-icon">📋</div><h3>No Reports Available</h3><p>Complete an analysis first, then add ?id=ANALYSIS_ID to the URL.</p></div></div>
-    </div>
+    <AnimatedPage><Header title="Reports" />
+      <div className="card"><div className="empty-state"><div className="empty-icon">📋</div><h3>No Reports Available</h3><p>Complete an analysis first.</p></div></div>
+    </AnimatedPage>
   );
 
   const scoreColor = (s: number) => s >= 85 ? 'var(--score-excellent)' : s >= 70 ? 'var(--score-good)' : s >= 50 ? 'var(--score-moderate)' : 'var(--score-critical)';
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Reports" />
       <div className="tabs">
         <button className={`tab ${activeTab === 'executive' ? 'active' : ''}`} onClick={() => setActiveTab('executive')}>Executive Summary</button>
@@ -863,20 +1021,20 @@ function ReportsPage() {
         <div>
           <div className="grid-3 mb-lg">
             <div className="stat-card" style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '48px', fontWeight: '800', fontFamily: 'var(--font-mono)', color: scoreColor(executive.overall_security_score) }}>
-                {executive.overall_security_score}
+              <div style={{ fontSize: '48px', fontWeight: '800', fontFamily: 'var(--font-mono)', color: scoreColor(executive.overall_security_score), letterSpacing: '-2px' }}>
+                <AnimatedCounter value={executive.overall_security_score} duration={1.5} />
               </div>
               <div className="stat-label">Security Score</div>
-              <div style={{ color: scoreColor(executive.overall_security_score), fontWeight: 600, fontSize: '14px', marginTop: '4px' }}>{executive.risk_level}</div>
+              <div style={{ color: scoreColor(executive.overall_security_score), fontWeight: 600, fontSize: '13px', marginTop: '4px' }}>{executive.risk_level}</div>
             </div>
             <div className="stat-card">
               <div className="stat-icon">⚠️</div>
-              <div className="stat-value">{executive.key_findings?.total_findings}</div>
+              <div className="stat-value"><AnimatedCounter value={executive.key_findings?.total_findings || 0} /></div>
               <div className="stat-label">Total Findings</div>
               <div style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {executive.key_findings?.critical > 0 && <span className="badge badge-critical">{executive.key_findings.critical} Critical</span>}
+                {executive.key_findings?.critical > 0 && <span className="badge badge-critical">{executive.key_findings.critical} Crit</span>}
                 {executive.key_findings?.high > 0 && <span className="badge badge-high">{executive.key_findings.high} High</span>}
-                {executive.key_findings?.medium > 0 && <span className="badge badge-medium">{executive.key_findings.medium} Medium</span>}
+                {executive.key_findings?.medium > 0 && <span className="badge badge-medium">{executive.key_findings.medium} Med</span>}
               </div>
             </div>
             <div className="stat-card">
@@ -891,10 +1049,7 @@ function ReportsPage() {
               <div className="card-title">🛡️ VPN Summary</div>
               <ul className="prop-list mt-md">
                 {Object.entries(executive.vpn_summary || {}).map(([k, v]) => (
-                  <li className="prop-item" key={k}>
-                    <span className="prop-label">{k.replace(/_/g, ' ')}</span>
-                    <span className="prop-value">{String(v)}</span>
-                  </li>
+                  <li className="prop-item" key={k}><span className="prop-label">{k.replace(/_/g, ' ')}</span><span className="prop-value">{String(v)}</span></li>
                 ))}
               </ul>
             </div>
@@ -902,10 +1057,7 @@ function ReportsPage() {
               <div className="card-title">📊 Category Scores</div>
               <ul className="prop-list mt-md">
                 {Object.entries(executive.category_scores || {}).map(([k, v]: [string, any]) => (
-                  <li className="prop-item" key={k}>
-                    <span className="prop-label">{k.replace(/_/g, ' ')}</span>
-                    <span className="prop-value" style={{ color: scoreColor(v.score) }}>{v.score} — {v.rating}</span>
-                  </li>
+                  <li className="prop-item" key={k}><span className="prop-label">{k.replace(/_/g, ' ')}</span><span className="prop-value" style={{ color: scoreColor(v.score) }}>{v.score} — {v.rating}</span></li>
                 ))}
               </ul>
             </div>
@@ -930,26 +1082,18 @@ function ReportsPage() {
 
       {activeTab === 'technical' && technical && (
         <div className="card">
-          <div className="card-title">📋 Full Technical Report</div>
+          <div className="card-title">📋 Technical Report</div>
           <p className="text-muted text-sm mb-md">Generated: {technical.generated_at}</p>
-          <pre style={{
-            background: 'var(--bg-secondary)',
-            padding: 'var(--space-lg)',
-            borderRadius: 'var(--radius-md)',
-            overflow: 'auto',
-            maxHeight: '600px',
-            fontSize: '12px',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.6,
-          }}>
+          <pre style={{ background: 'var(--bg-secondary)', padding: 'var(--space-lg)', borderRadius: 'var(--radius-md)', overflow: 'auto', maxHeight: '600px', fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.6, border: '1px solid var(--border)' }}>
             {JSON.stringify(technical, null, 2)}
           </pre>
         </div>
       )}
-    </div>
+    </AnimatedPage>
   );
 }
+
+// ========== Dataset Page ==========
 
 function DatasetPage() {
   const [datasetInfo, setDatasetInfo] = useState<any>(null);
@@ -964,32 +1108,22 @@ function DatasetPage() {
 
   const generateDataset = async () => {
     setGenerating(true);
-    try {
-      await api.generateDataset();
-      const info = await api.getDatasetInfo();
-      setDatasetInfo(info);
-    } catch (e: any) { alert(e.message); }
+    try { await api.generateDataset(); setDatasetInfo(await api.getDatasetInfo()); } catch (e: any) { alert(e.message); }
     setGenerating(false);
   };
 
   const trainModel = async () => {
     setTraining(true);
-    try {
-      await api.trainModel();
-      const info = await api.getModelInfo();
-      setModelInfo(info);
-    } catch (e: any) { alert(e.message); }
+    try { await api.trainModel(); setModelInfo(await api.getModelInfo()); } catch (e: any) { alert(e.message); }
     setTraining(false);
   };
 
   return (
-    <div className="page-container">
+    <AnimatedPage>
       <Header title="Dataset & Model" />
       <div className="grid-2">
         <div className="card">
-          <div className="card-header">
-            <div className="card-title">🗃️ Synthetic Dataset</div>
-          </div>
+          <div className="card-header"><div className="card-title">🗃️ Synthetic Dataset</div></div>
           {datasetInfo?.exists ? (
             <ul className="prop-list">
               <li className="prop-item"><span className="prop-label">Total Samples</span><span className="prop-value">{datasetInfo.total_samples}</span></li>
@@ -997,9 +1131,7 @@ function DatasetPage() {
               <li className="prop-item"><span className="prop-label">Per Class</span><span className="prop-value">{datasetInfo.samples_per_class}</span></li>
               <li className="prop-item"><span className="prop-label">Seed</span><span className="prop-value">{datasetInfo.seed}</span></li>
             </ul>
-          ) : (
-            <p className="text-muted">No dataset generated yet.</p>
-          )}
+          ) : <p className="text-muted">No dataset generated yet.</p>}
           <button className="btn btn-primary mt-md" onClick={generateDataset} disabled={generating}>
             {generating ? '⏳ Generating...' : '🔄 Regenerate Dataset'}
           </button>
@@ -1018,9 +1150,7 @@ function DatasetPage() {
         </div>
 
         <div className="card">
-          <div className="card-header">
-            <div className="card-title">🧠 ML Model</div>
-          </div>
+          <div className="card-header"><div className="card-title">🧠 ML Model</div></div>
           {modelInfo?.is_trained ? (
             <>
               <ul className="prop-list">
@@ -1044,10 +1174,7 @@ function DatasetPage() {
                   <div style={{ overflow: 'auto' }}>
                     <table className="data-table" style={{ fontSize: '11px' }}>
                       <thead>
-                        <tr>
-                          <th></th>
-                          {modelInfo.classes?.map((c: string) => <th key={c}>{c.slice(0, 5)}</th>)}
-                        </tr>
+                        <tr><th></th>{modelInfo.classes?.map((c: string) => <th key={c}>{c.slice(0, 5)}</th>)}</tr>
                       </thead>
                       <tbody>
                         {modelInfo.metrics.confusion_matrix.map((row: number[], i: number) => (
@@ -1055,9 +1182,9 @@ function DatasetPage() {
                             <td style={{ fontFamily: 'var(--font-primary)', fontWeight: 600 }}>{modelInfo.classes[i]}</td>
                             {row.map((val: number, j: number) => (
                               <td key={j} style={{
-                                background: i === j ? 'rgba(0, 255, 136, 0.1)' : val > 0 ? 'rgba(255, 59, 92, 0.1)' : 'transparent',
+                                background: i === j ? 'rgba(52, 211, 153, 0.08)' : val > 0 ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
                                 fontWeight: i === j ? 700 : 400,
-                                color: i === j ? 'var(--accent-green)' : val > 0 ? 'var(--accent-red)' : 'var(--text-tertiary)',
+                                color: i === j ? 'var(--accent2)' : val > 0 ? 'var(--sev-critical)' : 'var(--text-muted)',
                               }}>{val}</td>
                             ))}
                           </tr>
@@ -1068,23 +1195,24 @@ function DatasetPage() {
                 </div>
               )}
             </>
-          ) : (
-            <p className="text-muted">Model not trained yet.</p>
-          )}
+          ) : <p className="text-muted">Model not trained yet.</p>}
           <button className="btn btn-primary mt-md" onClick={trainModel} disabled={training}>
             {training ? '⏳ Training...' : '🔄 Retrain Model'}
           </button>
         </div>
       </div>
-    </div>
+    </AnimatedPage>
   );
 }
 
-// ========== Main App ==========
+// ========== App ==========
 
 function App() {
   return (
     <BrowserRouter>
+      <div className="bg-grid" />
+      <ParticleBackground />
+
       <div className="app-layout">
         <Sidebar />
         <main className="main-content">
