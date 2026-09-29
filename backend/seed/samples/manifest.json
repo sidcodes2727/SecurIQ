@@ -1,0 +1,440 @@
+{
+  "version": 2,
+  "generated_at": "2026-09-26T08:30:54Z",
+  "samples": {
+    "ah_transport_integrity_only": {
+      "name": "ah_transport_integrity_only",
+      "description": "AH transport mode \u2014 authenticated but unencrypted traffic",
+      "config": {
+        "name": "ah_transport_integrity_only",
+        "description": "AH transport mode \u2014 authenticated but unencrypted traffic",
+        "ike_version": 2,
+        "aggressive": false,
+        "ike_suite": "aes256-sha256-modp2048",
+        "esp_suite": "aes256gcm16",
+        "protocol": "ah",
+        "ah_icv": 16,
+        "pfs": false,
+        "mode": "transport",
+        "ip_version": 4,
+        "nat_t": false,
+        "auth": "psk",
+        "lifetime": 28800,
+        "rekey_after": null,
+        "traffic": [
+          [
+            "icmp",
+            20
+          ],
+          [
+            "email",
+            20
+          ]
+        ],
+        "vendor": "strongswan",
+        "offer_weak": false,
+        "identity": "gw-a.example.org",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 20
+      },
+      "ike_version": "IKEv2",
+      "exchange_mode": "IKEv2",
+      "mode": "Transport",
+      "ipsec_protocols": "AH",
+      "ike_encryption": "AES-256-CBC",
+      "ike_integrity": "HMAC-SHA2-256-128",
+      "dh_group": 14,
+      "dh_group_name": "MODP-2048",
+      "esp_suite": null,
+      "esp_family": null,
+      "esp_icv": 16,
+      "pfs": false,
+      "pfs_observable": false,
+      "rekey_times": [],
+      "ip_version": "IPv4",
+      "nat_t": false,
+      "auth_method": "Pre-Shared Key",
+      "ike_lifetime": null,
+      "traffic_segments": [
+        {
+          "class": "icmp",
+          "start": 1760000020.41,
+          "end": 1760000040.41
+        },
+        {
+          "class": "email",
+          "start": 1760000041.321926,
+          "end": 1760000061.321926
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 85,
+      "file": "ah_transport_integrity_only.pcap"
+    },
+    "ikev1_aggressive_psk_identity": {
+      "name": "ikev1_aggressive_psk_identity",
+      "description": "IKEv1 Aggressive Mode with PSK \u2014 identity in cleartext, PSK hash crackable offline",
+      "config": {
+        "name": "ikev1_aggressive_psk_identity",
+        "description": "IKEv1 Aggressive Mode with PSK \u2014 identity in cleartext, PSK hash crackable offline",
+        "ike_version": 1,
+        "aggressive": true,
+        "ike_suite": "aes128-sha1-modp1536",
+        "esp_suite": "aes128-sha1",
+        "protocol": "esp",
+        "ah_icv": 16,
+        "pfs": false,
+        "mode": "tunnel",
+        "ip_version": 4,
+        "nat_t": false,
+        "auth": "psk",
+        "lifetime": 86400,
+        "rekey_after": null,
+        "traffic": [
+          [
+            "voip",
+            30
+          ]
+        ],
+        "vendor": "cisco",
+        "offer_weak": false,
+        "identity": "vpnuser@corp.example",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 14
+      },
+      "ike_version": "IKEv1",
+      "exchange_mode": "Aggressive Mode",
+      "mode": "Tunnel",
+      "ipsec_protocols": "ESP",
+      "ike_encryption": "AES-128-CBC",
+      "ike_integrity": "HMAC-SHA1",
+      "dh_group": 5,
+      "dh_group_name": "MODP-1536",
+      "esp_suite": "AES-128-CBC + HMAC-SHA1-96",
+      "esp_family": "AES-CBC",
+      "esp_icv": 12,
+      "pfs": false,
+      "pfs_observable": true,
+      "rekey_times": [],
+      "ip_version": "IPv4",
+      "nat_t": false,
+      "auth_method": "Pre-Shared Key",
+      "ike_lifetime": 86400,
+      "traffic_segments": [
+        {
+          "class": "voip",
+          "start": 1760000014.5,
+          "end": 1760000044.5
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 3013,
+      "file": "ikev1_aggressive_psk_identity.pcap"
+    },
+    "misconfig_esp_null": {
+      "name": "misconfig_esp_null",
+      "description": "ESP with NULL encryption \u2014 integrity only, traffic readable on the wire",
+      "config": {
+        "name": "misconfig_esp_null",
+        "description": "ESP with NULL encryption \u2014 integrity only, traffic readable on the wire",
+        "ike_version": 2,
+        "aggressive": false,
+        "ike_suite": "aes256-sha256-modp2048",
+        "esp_suite": "null-sha256",
+        "protocol": "esp",
+        "ah_icv": 16,
+        "pfs": false,
+        "mode": "tunnel",
+        "ip_version": 4,
+        "nat_t": false,
+        "auth": "psk",
+        "lifetime": 28800,
+        "rekey_after": null,
+        "traffic": [
+          [
+            "web",
+            20
+          ],
+          [
+            "icmp",
+            10
+          ]
+        ],
+        "vendor": "strongswan",
+        "offer_weak": false,
+        "identity": "gw-a.example.org",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 18
+      },
+      "ike_version": "IKEv2",
+      "exchange_mode": "IKEv2",
+      "mode": "Tunnel",
+      "ipsec_protocols": "ESP",
+      "ike_encryption": "AES-256-CBC",
+      "ike_integrity": "HMAC-SHA2-256-128",
+      "dh_group": 14,
+      "dh_group_name": "MODP-2048",
+      "esp_suite": "NULL + HMAC-SHA2-256-128",
+      "esp_family": "NULL",
+      "esp_icv": 16,
+      "pfs": false,
+      "pfs_observable": false,
+      "rekey_times": [],
+      "ip_version": "IPv4",
+      "nat_t": false,
+      "auth_method": "Pre-Shared Key",
+      "ike_lifetime": null,
+      "traffic_segments": [
+        {
+          "class": "web",
+          "start": 1760000018.41,
+          "end": 1760000038.41
+        },
+        {
+          "class": "icmp",
+          "start": 1760000040.32919,
+          "end": 1760000050.32919
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 590,
+      "file": "misconfig_esp_null.pcap"
+    },
+    "moderate_ikev2_cbc_sha1_nopfs": {
+      "name": "moderate_ikev2_cbc_sha1_nopfs",
+      "description": "IKEv2, AES-128-CBC + HMAC-SHA1, MODP-2048, no PFS, legacy fallback proposal offered",
+      "config": {
+        "name": "moderate_ikev2_cbc_sha1_nopfs",
+        "description": "IKEv2, AES-128-CBC + HMAC-SHA1, MODP-2048, no PFS, legacy fallback proposal offered",
+        "ike_version": 2,
+        "aggressive": false,
+        "ike_suite": "aes128-sha1-modp2048",
+        "esp_suite": "aes128-sha1",
+        "protocol": "esp",
+        "ah_icv": 16,
+        "pfs": false,
+        "mode": "tunnel",
+        "ip_version": 4,
+        "nat_t": false,
+        "auth": "psk",
+        "lifetime": 28800,
+        "rekey_after": 25,
+        "traffic": [
+          [
+            "email",
+            30
+          ],
+          [
+            "chat",
+            30
+          ]
+        ],
+        "vendor": "strongswan",
+        "offer_weak": true,
+        "identity": "gw-a.example.org",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 12
+      },
+      "ike_version": "IKEv2",
+      "exchange_mode": "IKEv2",
+      "mode": "Tunnel",
+      "ipsec_protocols": "ESP",
+      "ike_encryption": "AES-128-CBC",
+      "ike_integrity": "HMAC-SHA1-96",
+      "dh_group": 14,
+      "dh_group_name": "MODP-2048",
+      "esp_suite": "AES-128-CBC + HMAC-SHA1-96",
+      "esp_family": "AES-CBC",
+      "esp_icv": 12,
+      "pfs": false,
+      "pfs_observable": true,
+      "rekey_times": [
+        1760000038.169,
+        1760000063.169
+      ],
+      "ip_version": "IPv4",
+      "nat_t": false,
+      "auth_method": "Pre-Shared Key",
+      "ike_lifetime": null,
+      "traffic_segments": [
+        {
+          "class": "email",
+          "start": 1760000012.41,
+          "end": 1760000042.41
+        },
+        {
+          "class": "chat",
+          "start": 1760000044.109423,
+          "end": 1760000074.109423
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 344,
+      "file": "moderate_ikev2_cbc_sha1_nopfs.pcap"
+    },
+    "natt_ikev2_chacha_eap": {
+      "name": "natt_ikev2_chacha_eap",
+      "description": "IKEv2 behind NAT (UDP 4500), ChaCha20-Poly1305, EAP remote-access",
+      "config": {
+        "name": "natt_ikev2_chacha_eap",
+        "description": "IKEv2 behind NAT (UDP 4500), ChaCha20-Poly1305, EAP remote-access",
+        "ike_version": 2,
+        "aggressive": false,
+        "ike_suite": "aes128gcm16-prfsha256-curve25519",
+        "esp_suite": "chacha20poly1305",
+        "protocol": "esp",
+        "ah_icv": 16,
+        "pfs": false,
+        "mode": "tunnel",
+        "ip_version": 4,
+        "nat_t": true,
+        "auth": "eap",
+        "lifetime": 28800,
+        "rekey_after": null,
+        "traffic": [
+          [
+            "chat",
+            30
+          ],
+          [
+            "web",
+            20
+          ]
+        ],
+        "vendor": "windows",
+        "offer_weak": false,
+        "identity": "gw-a.example.org",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 16
+      },
+      "ike_version": "IKEv2",
+      "exchange_mode": "IKEv2",
+      "mode": "Tunnel",
+      "ipsec_protocols": "ESP",
+      "ike_encryption": "AES-128-GCM-16",
+      "ike_integrity": "None (AEAD)",
+      "dh_group": 31,
+      "dh_group_name": "Curve25519",
+      "esp_suite": "ChaCha20-Poly1305",
+      "esp_family": "AES-GCM / ChaCha20-Poly1305 (AEAD)",
+      "esp_icv": 16,
+      "pfs": false,
+      "pfs_observable": false,
+      "rekey_times": [],
+      "ip_version": "IPv4",
+      "nat_t": true,
+      "auth_method": "EAP",
+      "ike_lifetime": null,
+      "traffic_segments": [
+        {
+          "class": "chat",
+          "start": 1760000016.56,
+          "end": 1760000046.56
+        },
+        {
+          "class": "web",
+          "start": 1760000047.234547,
+          "end": 1760000067.234547
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 4085,
+      "file": "natt_ikev2_chacha_eap.pcap"
+    },
+    "transport_ipv6_voip": {
+      "name": "transport_ipv6_voip",
+      "description": "IKEv2 transport mode over IPv6, AES-128-GCM, Curve25519 \u2014 host-to-host",
+      "config": {
+        "name": "transport_ipv6_voip",
+        "description": "IKEv2 transport mode over IPv6, AES-128-GCM, Curve25519 \u2014 host-to-host",
+        "ike_version": 2,
+        "aggressive": false,
+        "ike_suite": "aes128gcm16-prfsha256-curve25519",
+        "esp_suite": "aes128gcm16",
+        "protocol": "esp",
+        "ah_icv": 16,
+        "pfs": true,
+        "mode": "transport",
+        "ip_version": 6,
+        "nat_t": false,
+        "auth": "psk",
+        "lifetime": 28800,
+        "rekey_after": 25,
+        "traffic": [
+          [
+            "voip",
+            25
+          ],
+          [
+            "web",
+            20
+          ]
+        ],
+        "vendor": "strongswan",
+        "offer_weak": false,
+        "identity": "gw-a.example.org",
+        "replay_duplicates": 0,
+        "counter_reset": false,
+        "seed": 15
+      },
+      "ike_version": "IKEv2",
+      "exchange_mode": "IKEv2",
+      "mode": "Transport",
+      "ipsec_protocols": "ESP",
+      "ike_encryption": "AES-128-GCM-16",
+      "ike_integrity": "None (AEAD)",
+      "dh_group": 31,
+      "dh_group_name": "Curve25519",
+      "esp_suite": "AES-128-GCM-16",
+      "esp_family": "AES-GCM / ChaCha20-Poly1305 (AEAD)",
+      "esp_icv": 16,
+      "pfs": true,
+      "pfs_observable": true,
+      "rekey_times": [
+        1760000040.411
+      ],
+      "ip_version": "IPv6",
+      "nat_t": false,
+      "auth_method": "Pre-Shared Key",
+      "ike_lifetime": null,
+      "traffic_segments": [
+        {
+          "class": "voip",
+          "start": 1760000015.41,
+          "end": 1760000040.41
+        },
+        {
+          "class": "web",
+          "start": 1760000041.034878,
+          "end": 1760000061.034878
+        }
+      ],
+      "anomalies": {
+        "replay_duplicates": 0,
+        "counter_reset": false
+      },
+      "packets": 4974,
+      "file": "transport_ipv6_voip.pcap"
+    }
+  }
+}

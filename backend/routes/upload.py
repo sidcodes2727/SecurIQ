@@ -1,88 +1,81 @@
 """
 Upload API routes.
-Handles PCAP/PCAPNG file uploads.
-"""
-import uuid
-import shutil
-from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
 
-from backend.config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_MB
+Hardening (OWASP file-upload guidance): extension allow-list, magic-number check,
+streamed size limit, server-generated storage names (no client path components).
+"""
+from pathlib import Path
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
+from backend.analyzers.pcap_parser import is_capture_file
+from backend.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_MB
+from backend.storage import list_uploads, new_id, safe_filename, sample_manifest, upload_path
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
-# In-memory storage for uploaded files metadata
-uploaded_files: dict[str, dict] = {}
+CHUNK_SIZE = 1 << 20
 
 
 @router.post("")
 async def upload_pcap(file: UploadFile = File(...)):
-    """Upload a PCAP/PCAPNG file for analysis."""
-    # Validate file extension
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type '{suffix}'. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
-    
-    # Read file
-    content = await file.read()
-    
-    # Validate size
-    if len(content) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_UPLOAD_SIZE_MB}MB",
-        )
-    
-    # Save file
-    file_id = str(uuid.uuid4())[:8]
-    filename = f"{file_id}_{file.filename}"
-    filepath = UPLOAD_DIR / filename
-    
-    with open(filepath, "wb") as f:
-        f.write(content)
-    
-    # Store metadata
-    uploaded_files[file_id] = {
-        "id": file_id,
-        "original_name": file.filename,
-        "stored_name": filename,
-        "path": str(filepath),
-        "size": len(content),
-        "status": "uploaded",
-    }
-    
+    """Upload a PCAP/PCAPNG capture for analysis."""
+    name = file.filename or "capture.pcap"
+    if Path(name).suffix.lower() not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+
+    file_id = new_id()
+    dest = upload_path(file_id, name)
+    limit = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    size, head = 0, b""
+    try:
+        with open(dest, "wb") as out:
+            while chunk := await file.read(CHUNK_SIZE):
+                if len(head) < 4:
+                    head += chunk[:4 - len(head)]
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, f"File too large. Maximum size: {MAX_UPLOAD_SIZE_MB} MB")
+                out.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
+
+    if not is_capture_file(head):
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "File is not a pcap or pcapng capture (unrecognised magic number)")
+
     return {
         "file_id": file_id,
-        "filename": file.filename,
-        "size": len(content),
+        "filename": safe_filename(name),
+        "size": size,
         "status": "uploaded",
         "message": "File uploaded successfully. Ready for analysis.",
     }
 
 
 @router.get("/list")
-async def list_uploads():
-    """List all uploaded files."""
-    # Also check for sample files
-    sample_files = []
-    from backend.config import SAMPLE_DIR
-    if SAMPLE_DIR.exists():
-        for f in SAMPLE_DIR.glob("*.pcap"):
-            sample_files.append({
-                "id": f.stem,
-                "original_name": f.name,
-                "path": str(f),
-                "size": f.stat().st_size,
-                "status": "sample",
-                "is_sample": True,
-            })
-    
-    uploads = list(uploaded_files.values())
-    return {
-        "uploads": uploads,
-        "samples": sample_files,
-        "total": len(uploads) + len(sample_files),
-    }
+def list_all():
+    """Uploaded captures and the curated testbed samples."""
+    uploads = [{k: v for k, v in u.items() if k != "path"} for u in list_uploads()]
+    samples = []
+    for sample_id, truth in sample_manifest().get("samples", {}).items():
+        samples.append({
+            "id": sample_id,
+            "original_name": truth["file"],
+            "description": truth.get("description"),
+            "packets": truth.get("packets"),
+            "status": "sample",
+            "is_sample": True,
+            "highlights": {
+                "ike": f"{truth['ike_version']} {truth['exchange_mode'] if truth['ike_version'] == 'IKEv1' else ''}".strip(),
+                "esp": truth.get("esp_suite") or "AH",
+                "mode": truth["mode"],
+                "ip": truth["ip_version"],
+                "traffic": [s["class"] for s in truth["traffic_segments"]],
+            },
+        })
+    from backend.intel.lab import list_builds
+    lab = [{"id": b["id"], "label": b["label"], "created": b["created"], "packets": b.get("packets"),
+            "config": b.get("config"), "derived_from": b.get("derived_from")} for b in list_builds()[:30]]
+    return {"uploads": uploads, "samples": samples, "lab": lab, "total": len(uploads) + len(samples) + len(lab)}

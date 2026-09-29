@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Executive Summary — {{ r.capture.filename }}{% endblock %}
+{% block body %}
+<header class="report">
+  <div class="brand">SecurIQ · IPsec VPN Security Assessment</div>
+  <h1>Executive Summary</h1>
+  <div class="meta">Capture <strong>{{ r.capture.filename }}</strong> · {{ r.capture.packets }} packets ·
+    {{ "%.0f"|format(r.capture.duration_seconds or 0) }} s · SHA-256 {{ r.capture.file_hash }} · {{ r.generated_at }}</div>
+</header>
+
+<div class="grid g4">
+  <div class="tile"><div class="k">Security score</div>
+    <div class="v {{ r.overall_security_score|score_class }}-t">{{ r.overall_security_score if r.overall_security_score is not none else "—" }}<span class="muted" style="font-size:13px">/100</span></div>
+    <div class="s">{{ r.risk_level }}</div></div>
+  <div class="tile"><div class="k">Risk score</div>
+    <div class="v">{{ r.risk_score if r.risk_score is not none else "—" }}</div>
+    <div class="s">100 − security score</div></div>
+  <div class="tile"><div class="k">AI confidence</div>
+    <div class="v">{{ r.ai_confidence.overall|pct }}</div>
+    <div class="s">identification {{ r.ai_confidence.identification|pct }} · traffic {{ r.ai_confidence.classification|pct }}</div></div>
+  <div class="tile"><div class="k">Evidence coverage</div>
+    <div class="v">{{ r.coverage|pct }}</div>
+    <div class="s">{{ "Provisional score" if r.provisional else "of weighted assessment" }}</div></div>
+</div>
+
+<div class="bottom-line"><strong>Bottom line.</strong> {{ r.bottom_line }}</div>
+{% if r.score_cap %}<p class="muted">Score {{ r.score_cap }} (weakest-link rule).</p>{% endif %}
+
+<p>
+  {% for sev, n in r.key_findings.items() %}{% if n %}
+  <span class="pill {{ {'Critical':'bad','High':'warn','Medium':'mid','Low':'ok'}.get(sev, 'na') }}">{{ n }} {{ sev }}</span>
+  {% endif %}{% endfor %}
+</p>
+
+<h2>Priority actions</h2>
+{% if r.top_recommendations %}
+<table>
+  <tr><th style="width:90px">Priority</th><th>Action</th><th style="width:210px">Why</th></tr>
+  {% for rec in r.top_recommendations %}
+  <tr><td><span class="pill {{ rec.severity|level_class }}">{{ rec.priority }}</span></td>
+      <td>{{ rec.action }}</td><td class="muted">{{ rec.finding_id }} · {{ rec.title }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>No actions required.</p>{% endif %}
+
+<h2>What the AI identified</h2>
+<table>
+  <tr><th>Property</th><th>Value</th><th style="width:170px">Basis</th></tr>
+  {% for row in r.vpn_summary %}
+  <tr><td>{{ row.label }}</td><td>{{ row.value }}</td>
+      <td><span class="pill src-{{ row.source }}">{{ row.source|replace("_", " ") }}</span>
+        {% if row.source != "not_observable" %}<span class="muted">{{ row.confidence|pct }}</span>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% if r.effective_strength.bits %}
+<p>Effective suite strength: <strong>{{ r.effective_strength.bits }} bits</strong> ({{ r.effective_strength.rating }}), limited by {{ r.effective_strength.limited_by }}.</p>
+{% endif %}
+
+<h2>Security posture by category</h2>
+<table>
+  <tr><th>Category</th><th class="num" style="width:60px">Score</th><th style="width:40%">&nbsp;</th><th style="width:110px">Rating</th></tr>
+  {% for key, c in r.category_scores.items() %}
+  <tr><td>{{ c.label }}</td><td class="num">{{ c.score if c.score is not none else "—" }}</td>
+      <td><div class="bar"><span class="{{ c.score|score_class }}" style="width:{{ c.score or 0 }}%"></span></div></td>
+      <td>{{ c.rating }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="grid g2">
+  <div>
+    <h2>Threat matrix</h2>
+    <div class="matrix">
+      {% for li in [5,4,3,2,1] %}
+        <div class="axis">L{{ li }}</div>
+        {% for im in [1,2,3,4,5] %}
+          {% set risk = li * im %}
+          <div class="cell" style="background: var(--{{ 'bad' if risk >= 20 else 'warn' if risk >= 12 else 'mid' if risk >= 6 else 'ok' if risk >= 3 else 'na' }}-bg)">
+            {% for t in tm.threats %}{% if t.id in tm.grid[li-1][im-1] %}<strong>T{{ loop.index }}</strong> {% endif %}{% endfor %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+      <div></div>{% for im in [1,2,3,4,5] %}<div class="axis">I{{ im }}</div>{% endfor %}
+    </div>
+    <p class="muted">L = likelihood, I = impact (1–5). Risk = L × I.</p>
+  </div>
+  <div>
+    <h2>Top threats</h2>
+    <table>
+      {% for t in tm.threats[:6] %}
+      <tr><td><strong>T{{ loop.index }}</strong></td><td>{{ t.name }}<div class="muted">{{ t.attack }}</div></td>
+          <td class="num"><span class="pill {{ t.risk_level|level_class }}">{{ t.risk_score }}</span></td></tr>
+      {% else %}<tr><td class="muted">No threats triggered.</td></tr>{% endfor %}
+    </table>
+  </div>
+</div>
+
+<h2>Compliance</h2>
+<table>
+  <tr><th>Standard</th><th>Status</th><th class="num">Score</th><th class="num">Evidence coverage</th></tr>
+  {% for key, p in r.compliance.items() %}
+  <tr><td>{{ p.name }}</td>
+      <td><span class="pill {{ 'bad' if p.status == 'Non-compliant' else 'good' if p.status.startswith('Compliant') and 'warn' not in p.status else 'mid' if 'warn' in p.status else 'na' }}">{{ p.status }}</span></td>
+      <td class="num">{{ p.score if p.score is not none else "—" }}</td><td class="num">{{ p.coverage|pct }}</td></tr>
+  {% endfor %}
+</table>
+
+{% if r.traffic_mix %}
+<h2>Traffic inside the tunnel</h2>
+<table>
+  {% for t in r.traffic_mix %}
+  <tr><td style="width:40%">{{ t.label }}</td><td><div class="bar"><span class="ok" style="width:{{ (t.share * 100)|round(0) }}%"></span></div></td>
+      <td class="num" style="width:60px">{{ t.share|pct }}</td></tr>
+  {% endfor %}
+</table>
+<p class="muted">Encryption hides content, not activity: the classifier infers these from packet sizes and timing alone.</p>
+{% endif %}
+{% endblock %}

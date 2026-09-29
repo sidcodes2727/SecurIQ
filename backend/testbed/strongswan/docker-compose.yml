@@ -1,0 +1,40 @@
+# Two strongSwan gateways on an isolated bridge. PROFILE selects profiles/<PROFILE>.env.
+#   PROFILE=01-ikev2-strong-pfs docker compose up -d --build
+services:
+  gw-a:
+    build: .
+    env_file: profiles/${PROFILE:-01-ikev2-strong-pfs}.env
+    environment: [ROLE=initiator]
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.all.forwarding: "1"
+    volumes: ["./captures:/captures"]
+    networks:
+      wan:
+        ipv4_address: 172.30.0.10
+        ipv6_address: fd30::a
+    depends_on: [gw-b]
+
+  gw-b:
+    build: .
+    env_file: profiles/${PROFILE:-01-ikev2-strong-pfs}.env
+    environment: [ROLE=responder]
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.all.forwarding: "1"
+    networks:
+      wan:
+        ipv4_address: 172.30.0.20
+        ipv6_address: fd30::b
+
+networks:
+  wan:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+        - subnet: fd30::/64

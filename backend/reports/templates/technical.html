@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Technical Report — {{ r.capture_info.filename }}{% endblock %}
+{% block body %}
+<header class="report">
+  <div class="brand">SecurIQ · IPsec VPN Security Assessment</div>
+  <h1>Technical Report</h1>
+  <div class="meta">{{ r.capture_info.filename }} · {{ r.capture_info.total_packets }} packets ·
+    {{ "%.1f"|format(r.capture_duration_seconds or 0) }} s · parsed in {{ r.capture_info.parse_duration_ms }} ms · {{ r.generated_at }}</div>
+</header>
+
+<h2>1. Capture statistics</h2>
+<table>
+  <tr>{% for k in ["total","ike","ike_natt","esp","ah","natt_keepalive","other","ipv4","ipv6"] %}<th class="num">{{ k }}</th>{% endfor %}</tr>
+  <tr>{% for k in ["total","ike","ike_natt","esp","ah","natt_keepalive","other","ipv4","ipv6"] %}<td class="num">{{ r.packet_statistics.get(k, 0) }}</td>{% endfor %}</tr>
+</table>
+
+<h2>2. Protocol identification (evidence)</h2>
+<table>
+  <tr><th style="width:150px">Property</th><th style="width:170px">Value</th><th style="width:110px">Basis</th><th>Evidence</th></tr>
+  {% for row in r.identification %}
+  <tr><td>{{ row.label }}</td><td>{{ row.value }}</td>
+      <td><span class="pill src-{{ row.source }}">{{ row.source|replace("_"," ") }}</span>
+        {% if row.source != "not_observable" %}<br><span class="muted">{{ row.confidence|pct }}</span>{% endif %}</td>
+      <td>{{ row.evidence }}{% if row.method %}<div class="muted">Method: {{ row.method }}</div>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>3. IKE negotiation</h2>
+{% if r.ike.detected %}
+<p>{{ r.ike.version }} · {{ r.ike.exchange_mode }} · exchanges: {{ r.ike.exchange_types|join(", ") }}</p>
+<h3>Offered proposals (initiator, cleartext)</h3>
+<table>
+  <tr><th>#</th><th>Protocol</th><th>Encryption</th><th>Integrity</th><th>PRF</th><th>DH</th><th>Auth / lifetime</th></tr>
+  {% for p in r.ike.offered_proposals %}
+  <tr><td>{{ p.number }}{% if p.transform_number %}.{{ p.transform_number }}{% endif %}</td><td>{{ p.protocol }}</td>
+      <td>{{ p.encryption|join(", ") }}</td><td>{{ p.integrity|join(", ") }}</td><td>{{ p.prf|join(", ") }}</td>
+      <td>{{ p.dh_groups|join(", ") }}</td>
+      <td>{{ p.auth_method or "" }}{% if p.life_seconds %} · {{ p.life_seconds }} s{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% if r.ike.chosen_suite %}
+<p><strong>Selected suite:</strong> {{ r.ike.chosen_suite.encryption }} / {{ r.ike.chosen_suite.integrity }} /
+  {{ r.ike.chosen_suite.prf }} / {{ r.ike.chosen_suite.dh_group_name }} <span class="muted">({{ r.ike.chosen_suite.source }})</span></p>
+{% endif %}
+{% if r.ike.downgrade_surface %}<p class="warn-t">Downgrade surface: {{ r.ike.downgrade_surface|join(", ") }}</p>{% endif %}
+{% if r.ike.identities %}
+<h3>Identities disclosed in cleartext</h3>
+<ul class="tight">{% for i in r.ike.identities %}<li>{{ i.id_type }} <strong>{{ i.value }}</strong> (from {{ i.sender }}, {{ i.exchange }})</li>{% endfor %}</ul>
+{% endif %}
+{% if r.ike.vendor_ids %}
+<h3>Vendor IDs</h3>
+<ul class="tight">{% for v in r.ike.vendor_ids %}<li>{{ v.name }} <span class="mono muted">{{ v.hex[:32] }}</span></li>{% endfor %}</ul>
+{% endif %}
+<h3>Notifications</h3>
+<p class="mono">{{ r.ike.notifies|map(attribute="name")|join(", ") or "none" }}</p>
+<h3>Sessions</h3>
+<table>
+  <tr><th>Initiator SPI</th><th>Initiator</th><th>Responder</th><th class="num">Messages</th><th>Exchanges</th></tr>
+  {% for s in r.ike.sessions %}
+  <tr><td class="mono">{{ s.init_spi }}</td><td>{{ s.initiator_ip }}</td><td>{{ s.responder_ip }}</td>
+      <td class="num">{{ s.message_count }}</td><td>{{ s.exchanges|join(", ") }}</td></tr>
+  {% endfor %}
+</table>
+{% if r.ike.pfs_decisions %}
+<h3>Child SA negotiations (PFS size analysis)</h3>
+<table>
+  <tr><th class="num">Message ID</th><th class="num">Size</th><th>Measured</th><th class="num">Threshold</th><th>Kind</th><th>KE present</th></tr>
+  {% for d in r.ike.pfs_decisions %}
+  <tr><td class="num">{{ d.message_id }}</td><td class="num">{{ d.length }}</td><td>{{ d.measured or "cleartext" }}</td>
+      <td class="num">{{ d.threshold or "—" }}</td><td>{{ d.kind }}</td><td>{{ d.pfs }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% else %}<p class="muted">No IKE traffic in this capture.</p>{% endif %}
+
+<h2>4. ESP analysis</h2>
+{% if r.esp.detected %}
+<p><strong>Length fingerprint:</strong> {{ r.esp.fingerprint.suite or "inconclusive" }} — {{ r.esp.fingerprint.evidence }}</p>
+<p><strong>Mode inference:</strong> {{ r.esp.mode_inference.value }} ({{ r.esp.mode_inference.confidence|pct }}) — {{ r.esp.mode_inference.evidence }}</p>
+<p><strong>ESP-NULL test:</strong> {{ r.esp.null_encryption.evidence }}</p>
+<table>
+  <tr><th>SPI</th><th>Direction</th><th class="num">Packets</th><th class="num">Duration</th><th class="num">Seq range</th><th>Fingerprint</th><th>Replay</th></tr>
+  {% for sa in r.esp.security_associations[:40] %}
+  <tr><td class="mono">{{ sa.spi }}</td><td>{{ sa.src }} → {{ sa.dst }}</td><td class="num">{{ sa.packet_count }}</td>
+      <td class="num">{{ "%.1f"|format(sa.duration) }} s</td><td class="num">{{ sa.min_seq }}–{{ sa.max_seq }}</td>
+      <td>{{ sa.fingerprint.suite or sa.fingerprint.status }}{% if sa.fingerprint.confidence %} ({{ sa.fingerprint.confidence|pct }}){% endif %}</td>
+      <td>{{ sa.replay.duplicates }} dup · {{ sa.replay.counter_resets }} reset</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">No ESP traffic.</p>{% endif %}
+{% if r.ah.detected %}
+<h3>AH</h3>
+<p>{{ r.ah.packet_count }} packets · mode {{ r.ah.mode }} (Next Header: {{ r.ah.inner_protocols|join(", ") }}) · ICV {{ r.ah.icv_len }} B → {{ r.ah.integrity }}</p>
+{% endif %}
+<p>NAT-T: {{ "detected" if r.nat_t.detected else "not detected" }} ({{ r.nat_t.encapsulation }}) · IP: {{ r.ip.primary_version }}</p>
+
+<h2>5. Security assessment</h2>
+<p>Overall <strong>{{ r.security_assessment.overall_score }}</strong>/100 · {{ r.security_assessment.risk_level }} · coverage {{ r.security_assessment.coverage|pct }}
+  {% if r.security_assessment.score_cap %}· {{ r.security_assessment.score_cap }} (uncapped {{ r.security_assessment.uncapped_score }}){% endif %}</p>
+<p class="muted">{{ r.security_assessment.method }}</p>
+<table>
+  <tr><th>Category</th><th class="num">Weight</th><th class="num">Score</th><th class="num">Confidence</th><th>Rationale</th></tr>
+  {% for key, c in r.security_assessment.categories.items() %}
+  <tr><td>{{ c.label }}</td><td class="num">{{ c.weight|pct }}</td><td class="num {{ c.score|score_class }}-t">{{ c.score if c.score is not none else "—" }}</td>
+      <td class="num">{{ c.confidence|pct }}</td><td>{{ c.rationale }}</td></tr>
+  {% endfor %}
+</table>
+{% if r.security_assessment.effective_strength.bits %}
+<p>Effective strength {{ r.security_assessment.effective_strength.bits }} bits, limited by {{ r.security_assessment.effective_strength.limited_by }}:
+  {% for c in r.security_assessment.effective_strength.components %}{{ c.role }} {{ c.algorithm or "?" }} = {{ c.bits or "?" }}{{ "; " if not loop.last }}{% endfor %}</p>
+{% endif %}
+
+<h2>6. Findings</h2>
+<table>
+  <tr><th style="width:80px">ID</th><th style="width:80px">Severity</th><th>Finding</th><th style="width:90px">Basis</th></tr>
+  {% for f in r.findings %}
+  <tr><td class="mono">{{ f.id }}</td><td><span class="pill {{ f.severity|level_class }}">{{ f.severity }}</span></td>
+      <td><strong>{{ f.title }}</strong><div>{{ f.description }}</div><div class="muted">Evidence: {{ f.evidence }}</div>
+          <div>→ {{ f.recommendation }}</div></td>
+      <td><span class="pill src-{{ f.evidence_source }}">{{ f.evidence_source|replace("_"," ") }}</span></td></tr>
+  {% endfor %}
+</table>
+
+<h2>7. Compliance checks</h2>
+{% for key, p in r.compliance.items() %}
+<h3>{{ p.name }} — {{ p.status }}{% if p.score is not none %} ({{ p.score }}%){% endif %}</h3>
+<table>
+  {% for c in p.checks %}
+  <tr><td class="mono" style="width:70px">{{ c.id }}</td><td>{{ c.title }}<div class="muted">{{ c.reference }}</div></td>
+      <td style="width:70px"><span class="pill {{ {'pass':'good','warn':'mid','fail':'bad'}.get(c.status,'na') }}">{{ c.status }}</span></td>
+      <td>{{ c.evidence }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+
+<h2>8. Threat matrix</h2>
+<table>
+  <tr><th>Threat</th><th>ATT&amp;CK</th><th class="num">L</th><th class="num">I</th><th class="num">Risk</th><th>Findings</th></tr>
+  {% for t in r.threat_matrix.threats %}
+  <tr><td><strong>{{ t.name }}</strong><div class="muted">{{ t.description }}</div></td><td>{{ t.attack }}</td>
+      <td class="num">{{ t.likelihood }}</td><td class="num">{{ t.impact }}</td>
+      <td class="num"><span class="pill {{ t.risk_level|level_class }}">{{ t.risk_score }} {{ t.risk_level }}</span></td>
+      <td class="mono">{{ t.contributing_findings|join(", ") }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>9. Traffic classification</h2>
+{% set tc = r.traffic_classification %}
+{% if tc.windows %}
+<p>{{ tc.summary.windows }} windows · packet-weighted confidence {{ tc.summary.mean_confidence|pct }} · {{ tc.summary.uncertain_windows }} uncertain</p>
+<table>
+  <tr><th>Tunnel</th><th class="num">Window start</th><th>Prediction</th><th class="num">Confidence</th><th>Runner-up</th></tr>
+  {% for w in tc.windows[:60] %}
+  <tr><td class="mono">{{ w.flow_id }}</td><td class="num">{{ "%.0f"|format(w.window_start - tc.windows[0].window_start) }} s</td>
+      <td>{{ w.predicted_label }}{% if w.uncertain %} <span class="pill na">uncertain</span>{% endif %}</td>
+      <td class="num">{{ w.confidence|pct }}</td><td>{{ w.top_predictions[1].class if w.top_predictions|length > 1 }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">{{ tc.summary.note or "No classifiable ESP traffic." }}</p>{% endif %}
+
+<h2>10. AI confidence</h2>
+<p>Overall {{ r.ai_confidence.overall|pct }} = {{ r.ai_confidence.formula }}. Identification {{ r.ai_confidence.identification|pct }}
+  ({{ r.ai_confidence.fields_observed }} observed, {{ r.ai_confidence.fields_inferred }} inferred, {{ r.ai_confidence.fields_not_observable }} not observable),
+  classification {{ r.ai_confidence.classification|pct }}, coverage {{ r.ai_confidence.assessment_coverage|pct }}.</p>
+
+{% if r.ground_truth %}
+<h2>11. Ground-truth comparison (testbed scenario)</h2>
+<p>{{ r.ground_truth.scenario }} — {{ r.ground_truth.correct }}/{{ r.ground_truth.decided }} decided fields correct.</p>
+<table>
+  <tr><th>Field</th><th>Expected</th><th>AI result</th><th>Status</th></tr>
+  {% for row in r.ground_truth.rows %}
+  <tr><td>{{ row.field }}</td><td>{{ row.expected }}</td><td>{{ row.predicted if row.predicted is not none else "not observable" }}</td>
+      <td><span class="pill {{ {'correct':'good','wrong':'bad'}.get(row.status,'na') }}">{{ row.status }}</span></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>Methodology &amp; limitations</h2>
+<ul class="tight">{% for m in r.methodology %}<li>{{ m }}</li>{% endfor %}</ul>
+{% endblock %}

@@ -1,99 +1,80 @@
 """
-IPsec VPN Protocol Analyzer - FastAPI Application
-Main entry point for the backend server.
+SecurIQ — AI-Powered IPsec VPN Protocol Analyzer: FastAPI application entry point.
 """
 import logging
+import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
-from backend.routes.upload import router as upload_router
-from backend.routes.analysis import router as analysis_router
+from backend.bootstrap import start_background_bootstrap, state
+from backend.config import SAMPLE_DIR
 from backend.ml.model import classifier
-from backend.config import DATA_DIR, SAMPLE_DIR, DATASET_DIR
+from backend.routes.analysis import router as analysis_router
+from backend.routes.capture import router as capture_router
+from backend.routes.intel import router as intel_router
+from backend.routes.live import router as live_router
+from backend.realtime.manager import manager as live_manager
+from backend.routes.testbed import router as testbed_router
+from backend.routes.upload import router as upload_router
+from backend.storage import sample_manifest
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+VERSION = "3.0.0"
+DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application startup and shutdown events."""
-    logger.info("Starting IPsec VPN Analyzer backend...")
-    
-    # Generate sample data on startup if not exists
-    try:
-        if not any(SAMPLE_DIR.glob("*.pcap")):
-            logger.info("Generating sample PCAP files...")
-            from backend.sample_data.generate_sample_pcap import generate_all_samples
-            files = generate_all_samples()
-            logger.info(f"Generated {len(files)} sample PCAP files")
-    except Exception as e:
-        logger.warning(f"Could not generate sample PCAPs: {e}")
-    
-    # Generate dataset and train model if not exists
-    try:
-        dataset_file = DATASET_DIR / "synthetic_dataset.json"
-        if not dataset_file.exists():
-            logger.info("Generating synthetic dataset...")
-            from backend.ml.synthetic_data import generate_dataset
-            generate_dataset()
-            logger.info("Synthetic dataset generated")
-        
-        if not classifier.is_trained:
-            logger.info("Training ML model...")
-            metrics = classifier.train()
-            logger.info(f"Model trained. Accuracy: {metrics['accuracy']}")
-    except Exception as e:
-        logger.warning(f"Could not train model on startup: {e}")
-    
+    logger.info("Starting SecurIQ backend %s", VERSION)
+    start_background_bootstrap()
     yield
-    
-    logger.info("Shutting down IPsec VPN Analyzer backend...")
+    for session in live_manager.list():
+        if session["status"] in ("starting", "running"):
+            live_manager.get(session["id"]).stop()
+    logger.info("Shutting down SecurIQ backend")
 
 
 app = FastAPI(
-    title="IPsec VPN Protocol Analyzer",
+    title="SecurIQ — IPsec VPN Protocol Analyzer",
     description="AI-Powered IPsec VPN Protocol Analyzer and Security Assessment Framework",
-    version="1.0.0",
+    version=VERSION,
     lifespan=lifespan,
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=[o.strip() for o in os.environ.get("SECURIQ_CORS_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(upload_router)
 app.include_router(analysis_router)
+app.include_router(testbed_router)
+app.include_router(capture_router)
+app.include_router(live_router)
+app.include_router(intel_router)
 
 
 @app.get("/")
-async def root():
-    return {
-        "name": "IPsec VPN Protocol Analyzer",
-        "version": "1.0.0",
-        "status": "running",
-        "model_trained": classifier.is_trained,
-    }
+def root():
+    return {"name": "SecurIQ IPsec VPN Protocol Analyzer", "version": VERSION, "status": "running",
+            "model_trained": classifier.is_trained}
 
 
 @app.get("/api/health")
-async def health():
+def health():
     return {
         "status": "healthy",
+        "version": VERSION,
         "model_trained": classifier.is_trained,
-        "sample_files": len(list(SAMPLE_DIR.glob("*.pcap"))) if SAMPLE_DIR.exists() else 0,
+        "model_training": state["model_training"],
+        "model_error": state["model_error"],
+        "samples_ready": state["samples_ready"],
+        "sample_files": len(sample_manifest().get("samples", {})) if SAMPLE_DIR.exists() else 0,
     }

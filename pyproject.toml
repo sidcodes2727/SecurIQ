@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "securiq"
+version = "4.0.0"
+description = "SecurIQ — AI-powered IPsec VPN protocol analyzer and security assessment framework, as a terminal package"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.7",
+    "textual>=0.80",
+    "numpy>=1.26",
+    "scikit-learn>=1.3",
+    "joblib>=1.3",
+    "jinja2>=3.1",
+    "scapy>=2.5",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "python-multipart>=0.0.9", "pydantic>=2.5"]
+dev = ["pytest>=7.4", "httpx>=0.25"]
+
+[project.scripts]
+securiq = "securiq.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["securiq*", "backend*"]
+exclude = ["backend.tests*", "backend.venv*"]
+
+[tool.setuptools.package-data]
+securiq = ["tui/*.tcss"]
+backend = ["reports/templates/*", "testbed/strongswan/*"]
