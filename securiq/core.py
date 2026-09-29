@@ -530,7 +530,10 @@ def live_start_replay(target: str, speed: float):
     from backend.realtime.manager import manager
     ensure_ready()
     file_id, _, _ = resolve_target(target)
-    return manager.start_replay(file_id, speed)
+    try:
+        return manager.start_replay(file_id, speed)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:  # includes SessionLimit (three sessions at once)
+        raise CoreError(str(exc)) from exc
 
 
 def live_start_interface(interface: str, bpf: str | None = None, tool: str | None = None):
@@ -555,7 +558,7 @@ def bounded_capture(interface: str | None, duration: int, bpf: str, max_packets:
         if not conf.use_pcap:
             raise PermissionError("libpcap/Npcap not available")
         pkts = sniff(iface=interface or None, filter=bpf, timeout=duration, count=max_packets, store=True)
-    except (PermissionError, OSError, RuntimeError) as exc:
+    except (PermissionError, OSError, RuntimeError, ValueError) as exc:  # ValueError: unknown interface name
         raise CoreError(f"Live capture unavailable: {exc}. Install Npcap (Windows) or run as root (Linux), "
                         "or capture with tcpdump/Wireshark and pass the file to `securiq analyze`.") from exc
     file_id = new_id()

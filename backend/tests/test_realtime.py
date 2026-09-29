@@ -107,3 +107,29 @@ class TestLiveApi:
         assert client.post("/api/live/start", json={"source": "replay", "file_id": "x", "speed": 999}).status_code == 422
         assert client.get("/api/live/../../etc/events").status_code == 404
         assert client.get("/api/live/0123456789").status_code == 404
+
+
+def test_scapy_frames_get_the_right_link_type():
+    """The parser skips a different number of header bytes per link type, so the label must match the frame."""
+    from scapy.layers.inet import IP, UDP
+    from scapy.layers.l2 import CookedLinux, Ether, Loopback
+    from backend.realtime.sources import scapy_linktype
+    ip = IP(src="10.0.0.1", dst="10.0.0.2") / UDP(sport=500, dport=500)
+    assert scapy_linktype(Ether() / ip) == 1
+    assert scapy_linktype(Loopback() / ip) == 0      # Npcap loopback / BSD: 4-byte family header
+    assert scapy_linktype(CookedLinux() / ip) == 113
+    assert scapy_linktype(ip) == 101                  # headerless
+
+
+def test_windows_loopback_frame_is_decoded_as_ike():
+    """A frame as the Npcap loopback adapter delivers it (02 00 00 00 + IP) must decode to IKE, not 'other'."""
+    import struct
+    from backend.analyzers.pcap_parser import PacketDecoder
+    from backend.testbed import pcap_writer as pw
+    from backend.testbed.esp_model import IKE_SUITES
+    from tests.test_parser import _ikev2_init
+    ike = _ikev2_init([IKE_SUITES["aes128-sha256-ecp256"]])
+    ip = pw.ip_packet(4, "127.0.0.1", "127.0.0.1", 17, pw.udp(4, "127.0.0.1", "127.0.0.1", 500, 500, ike))
+    for header in (struct.pack("<I", 2), struct.pack(">I", 2)):
+        packet = PacketDecoder().decode(header + ip, 0, 1.0, 1)
+        assert packet["protocol_type"] == "ike" and packet["src_ip"] == "127.0.0.1"

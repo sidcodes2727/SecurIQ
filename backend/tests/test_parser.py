@@ -146,6 +146,28 @@ class TestCaptureReader:
         self._write_raw(tmp_path / "vlan.pcap", 1, [(1, vlan, len(vlan))])
         assert parse_pcap(str(tmp_path / "vlan.pcap"))["packets"][0]["esp_payload_len"] == 60
 
+    @pytest.mark.parametrize("header", [
+        b"\x02\x00\x00\x00",   # AF_INET, little-endian host (Windows Npcap loopback, macOS, most BSDs)
+        b"\x00\x00\x00\x02",   # AF_INET, big-endian host
+    ])
+    def test_bsd_loopback_ipv4(self, tmp_path, header):
+        frame = header + _frame_esp(4, 72)
+        self._write_raw(tmp_path / "lo.pcap", 0, [(1, frame, len(frame))])
+        packet = parse_pcap(str(tmp_path / "lo.pcap"))["packets"][0]
+        assert packet["protocol_type"] == "esp" and packet["esp_payload_len"] == 72
+
+    @pytest.mark.parametrize("family", [10, 23, 24, 28, 30])
+    def test_bsd_loopback_ipv6_family_values(self, tmp_path, family):
+        frame = struct.pack("<I", family) + _frame_esp(6, 64)
+        self._write_raw(tmp_path / "lo6.pcap", 0, [(1, frame, len(frame))])
+        packet = parse_pcap(str(tmp_path / "lo6.pcap"))["packets"][0]
+        assert packet["protocol_type"] == "esp" and packet["ip_version"] == 6
+
+    def test_loopback_with_unknown_family_is_skipped(self, tmp_path):
+        frame = struct.pack("<I", 99) + _frame_esp(4, 60)
+        self._write_raw(tmp_path / "lo.pcap", 0, [(1, frame, len(frame))])
+        assert parse_pcap(str(tmp_path / "lo.pcap"))["packets"][0]["protocol_type"] == "other"
+
     def test_truncated_snaplen_uses_ip_length(self, tmp_path):
         full = pw.ethernet(_frame_esp(4, 1200), 4)
         self._write_raw(tmp_path / "snap.pcap", 1, [(1, full[:96], len(full))])

@@ -115,6 +115,25 @@ class PipeSource(Source):
                 self.proc.kill()
 
 
+def scapy_linktype(pkt) -> int:
+    """pcap link-layer type of a frame Scapy captured, judged by the layer it decoded first.
+
+    Getting this wrong makes the parser skip the wrong number of header bytes: the Npcap loopback adapter frames start
+    with a 4-byte BSD header (type 0), Linux 'any' captures with a cooked header (113 / 276), and only truly headerless
+    frames are raw IP (101)."""
+    from scapy.all import Ether
+    from scapy.layers.l2 import CookedLinux, CookedLinuxV2, Loopback
+    if isinstance(pkt, Ether):
+        return 1
+    if isinstance(pkt, Loopback):
+        return 0
+    if isinstance(pkt, CookedLinux):
+        return 113
+    if isinstance(pkt, CookedLinuxV2):
+        return 276
+    return 101
+
+
 class ScapySource(Source):
     realtime = True
 
@@ -128,10 +147,10 @@ class ScapySource(Source):
         self._sniffer = None
 
     def frames(self, stop: threading.Event) -> Iterator[Frame]:
-        from scapy.all import AsyncSniffer, Ether
+        from scapy.all import AsyncSniffer
 
         def enqueue(pkt) -> None:
-            linktype = 1 if isinstance(pkt, Ether) else 101
+            linktype = scapy_linktype(pkt)
             try:
                 self._queue.put_nowait((float(pkt.time), linktype, bytes(pkt)))
             except queue.Full:

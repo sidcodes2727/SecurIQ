@@ -204,8 +204,8 @@ def captures() -> None:
 
 # ---------------------------------------------------------------- fleet
 
-@cli.command()
-@click.argument("query", nargs=-1)
+@cli.command(context_settings={"ignore_unknown_options": True, "help_option_names": ["-h", "--help"]})  # `-src:lab` negates
+@click.argument("query", nargs=-1, type=click.UNPROCESSED)
 @click.option("--csv", "csv_path", type=click.Path(dir_okay=False), help="Write matching rows to a CSV file")
 @click.option("--facets", is_flag=True, help="Show facet counts for the matching rows")
 @click.option("--help-query", is_flag=True, help="Explain the query language")

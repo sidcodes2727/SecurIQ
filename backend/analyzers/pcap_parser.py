@@ -269,8 +269,12 @@ def _strip_link_layer(frame: bytes, linktype: int) -> bytes | None:
     if linktype == LINKTYPE_SLL2 and len(frame) >= 20:
         return frame[20:] if frame[0:2] in (b"\x08\x00", b"\x86\xdd") else None
     if linktype == LINKTYPE_NULL and len(frame) >= 4:
-        family = max(struct.unpack("<I", frame[:4])[0], struct.unpack(">I", frame[:4])[0]) & 0xFF
-        return frame[4:] if family in (2, 24, 28, 30) else None
+        # The BSD loopback header is the address family in the *capturing host's* byte order: 02 00 00 00 (little
+        # endian, Windows / macOS / most BSDs) or 00 00 00 02 (big endian). The family is always a small number.
+        little, big = struct.unpack("<I", frame[:4])[0], struct.unpack(">I", frame[:4])[0]
+        family = little if little <= 0xFF else big
+        # AF_INET 2; AF_INET6 is 10 (Linux), 23 (Windows), 24 (NetBSD), 28 (FreeBSD), 30 (macOS)
+        return frame[4:] if family in (2, 10, 23, 24, 28, 30) else None
     return None
 
 

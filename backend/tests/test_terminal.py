@@ -188,6 +188,22 @@ def test_cli_errors_are_clean(weak_record):
     assert out.exit_code == 1 and "No analysis matches" in out.output
 
 
+def test_cli_fleet_negated_term_is_not_an_option(weak_record):
+    out = CliRunner().invoke(cli, ["fleet", "ike:ikev1", "-src:lab"])
+    assert out.exit_code == 0, out.output
+    assert "OBJECT EXPLORER" in out.output and "No such option" not in out.output
+
+
+def test_bounded_capture_reports_a_bad_interface_cleanly():
+    with pytest.raises(core.CoreError, match="Live capture unavailable"):
+        core.bounded_capture("definitely-not-an-interface", 1, "esp")
+
+
+def test_cli_capture_bad_interface_is_one_line():
+    out = CliRunner().invoke(cli, ["capture", "-i", "definitely-not-an-interface", "-d", "1"])
+    assert out.exit_code == 1 and "Traceback" not in out.output
+
+
 def test_cli_report_export_files(weak_record, tmp_path):
     html = tmp_path / "r.html"
     out = CliRunner().invoke(cli, ["report", weak_record["analysis_id"], "--format", "html", "-o", str(html)])
@@ -242,3 +258,16 @@ def test_console_walks_every_view(weak_record, strong_record):
             assert not errors, [e.message for e in errors]
 
     asyncio.run(scenario())
+
+
+def test_fourth_live_session_is_a_clean_error(scenario_capture):
+    """Three live sessions may run at once; the fourth must be a readable CoreError, not a raw exception."""
+    path, _ = scenario_capture("ah_transport_integrity_only")
+    file_id = core.import_capture(path)
+    sessions = [core.live_start_replay(file_id, 1) for _ in range(3)]
+    try:
+        with pytest.raises(core.CoreError, match="At most 3"):
+            core.live_start_replay(file_id, 1)
+    finally:
+        for s in sessions:
+            s.stop()
