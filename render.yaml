@@ -1,0 +1,26 @@
+# Render Blueprint for the SecurIQ API on the FREE plan. Render → New → Blueprint → pick this repository.
+# The React front end is hosted separately on Vercel (frontend/vercel.json).
+#
+# Free-plan facts this file is built around:
+#   - 512 MB RAM: the pre-trained model and six small samples ship in backend/seed (no training, no big captures)
+#   - no persistent disk: data lives in /tmp and resets on every restart or redeploy
+#   - the service sleeps after 15 minutes without requests and takes about a minute to wake
+services:
+  - type: web
+    name: securiq-api
+    runtime: python
+    plan: free
+    buildCommand: pip install ".[web]"
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1   # one worker: live sessions are in memory
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECURIQ_DATA_DIR
+        value: /tmp/securiq
+      - key: SECURIQ_SEED_DIR      # copied into the data dir at start; see backend/bootstrap.py
+        value: backend/seed
+      - key: SECURIQ_MAX_UPLOAD_MB # larger captures can exhaust 512 MB during analysis
+        value: "15"
+      - key: SECURIQ_CORS_ORIGINS  # set in the dashboard to your Vercel URL(s), comma-separated, no trailing slash
+        sync: false

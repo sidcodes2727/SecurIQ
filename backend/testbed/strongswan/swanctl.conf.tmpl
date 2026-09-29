@@ -1,0 +1,40 @@
+# Rendered by entrypoint.sh with envsubst from the active profile (profiles/*.env).
+connections {
+    lab {
+        version = ${IKE_VERSION}
+        aggressive = ${AGGRESSIVE}
+        local_addrs = ${LOCAL_ADDR}
+        remote_addrs = ${REMOTE_ADDR}
+        proposals = ${IKE_PROPOSALS}
+        rekey_time = ${IKE_REKEY_TIME}
+        over_time = 30s
+        encap = ${FORCE_ENCAP}
+        local {
+            auth = psk
+            id = ${LOCAL_ID}
+        }
+        remote {
+            auth = psk
+            id = ${REMOTE_ID}
+        }
+        children {
+            net {
+                mode = ${MODE}
+                local_ts = ${LOCAL_TS}
+                remote_ts = ${REMOTE_TS}
+                esp_proposals = ${ESP_PROPOSALS}
+                rekey_time = ${CHILD_REKEY_TIME}
+                life_time = ${CHILD_LIFE_TIME}
+                start_action = none
+            }
+        }
+    }
+}
+
+secrets {
+    ike-lab {
+        id-a = gw-a.lab.example
+        id-b = gw-b.lab.example
+        secret = "${PSK}"
+    }
+}

@@ -1,250 +1,287 @@
 """
-Flow feature extractor for ML traffic classification.
-Extracts statistical features from ESP packet flows grouped by SPI.
+Flow feature extraction for encrypted-traffic classification.
+
+ESP Security Associations are unidirectional, so a single SPI only ever sees one
+direction of a conversation. We therefore:
+
+1. group ESP packets by SPI into SAs,
+2. pair each SA with the reverse-direction SA between the same peers that overlaps
+   it most in time (one *tunnel*),
+3. cut each tunnel into fixed time windows, and
+4. compute direction-agnostic size/timing features per window.
+
+Direction is canonicalised to "down" = the direction carrying more bytes in the window,
+so features do not depend on which peer initiated the tunnel.
+
+The exact same code path is used for training data (see backend/ml/dataset.py) and for
+inference on uploaded captures, which removes train/inference skew.
 """
-import math
-from typing import Any
+from __future__ import annotations
+
 from collections import defaultdict
+from typing import Any
 
+import numpy as np
 
-def extract_flow_features(parsed_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    Extract ML-ready features from ESP packet flows.
-    
-    Groups packets by SPI and computes statistical features per flow.
-    Returns a list of feature dictionaries, one per flow.
-    """
-    packets = parsed_data.get("packets", [])
-    esp_packets = [p for p in packets if p.get("protocol_type") == "esp"]
-    
-    if not esp_packets:
-        return []
-    
-    # Group packets by SPI
-    spi_flows = defaultdict(list)
-    for p in esp_packets:
-        spi = p.get("spi", "unknown")
-        spi_flows[spi].append(p)
-    
-    features_list = []
-    for spi, flow_packets in spi_flows.items():
-        if len(flow_packets) < 3:
-            continue  # Need minimum packets for meaningful features
-        
-        features = _compute_flow_features(flow_packets, spi)
-        features_list.append(features)
-    
-    return features_list
+WINDOW_SECONDS = 10.0
+MIN_WINDOW_PACKETS = 8
+BURST_GAP = 0.01          # packets closer than 10 ms belong to the same burst
+IDLE_GAP = 1.0
+PAIRING_TOLERANCE = 5.0   # reverse SA may start up to 5 s after the forward SA ends
+SIZE_BINS = np.arange(0, 1601, 100)
 
-
-def _compute_flow_features(packets: list[dict], spi: str) -> dict[str, Any]:
-    """Compute comprehensive feature vector for a single flow."""
-    # Sort by timestamp
-    packets = sorted(packets, key=lambda p: p.get("timestamp", 0))
-    
-    # Basic packet size statistics
-    sizes = [p.get("length", 0) for p in packets]
-    payload_sizes = [p.get("esp_payload_len", 0) for p in packets if p.get("esp_payload_len", 0) > 0]
-    if not payload_sizes:
-        payload_sizes = sizes
-    
-    # Timestamps
-    timestamps = [p.get("timestamp", 0) for p in packets]
-    
-    # Inter-arrival times (IAT)
-    iats = []
-    for i in range(1, len(timestamps)):
-        iat = timestamps[i] - timestamps[i-1]
-        if iat >= 0:
-            iats.append(iat)
-    
-    # Flow duration
-    duration = timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0.001
-    if duration <= 0:
-        duration = 0.001
-    
-    # Direction analysis (heuristic: based on IP pair)
-    directions = _analyze_directions(packets)
-    
-    # Burst detection
-    bursts = _detect_bursts(iats, threshold_factor=3.0)
-    
-    features = {
-        "spi": spi,
-        # Packet count
-        "packet_count": len(packets),
-        # Size statistics
-        "size_mean": _mean(sizes),
-        "size_std": _std(sizes),
-        "size_min": min(sizes) if sizes else 0,
-        "size_max": max(sizes) if sizes else 0,
-        "size_median": _median(sizes),
-        "size_q1": _percentile(sizes, 25),
-        "size_q3": _percentile(sizes, 75),
-        "size_iqr": _percentile(sizes, 75) - _percentile(sizes, 25),
-        "payload_mean": _mean(payload_sizes),
-        "payload_std": _std(payload_sizes),
-        # Timing statistics
-        "duration": duration,
-        "iat_mean": _mean(iats) if iats else 0,
-        "iat_std": _std(iats) if iats else 0,
-        "iat_min": min(iats) if iats else 0,
-        "iat_max": max(iats) if iats else 0,
-        "iat_median": _median(iats) if iats else 0,
-        "iat_cv": (_std(iats) / _mean(iats)) if iats and _mean(iats) > 0 else 0,
-        # Rate statistics
-        "packet_rate": len(packets) / duration,
-        "byte_rate": sum(sizes) / duration,
-        "bits_per_second": (sum(sizes) * 8) / duration,
-        # Direction
-        "fwd_ratio": directions["fwd_ratio"],
-        "bwd_ratio": directions["bwd_ratio"],
-        "fwd_packet_count": directions["fwd_count"],
-        "bwd_packet_count": directions["bwd_count"],
-        # Burst features
-        "burst_count": bursts["count"],
-        "avg_burst_size": bursts["avg_size"],
-        "burst_rate": bursts["count"] / duration if duration > 0 else 0,
-        # Entropy-like features
-        "size_entropy": _entropy(sizes),
-        "iat_regularity": 1.0 / (1.0 + (_std(iats) / _mean(iats) if iats and _mean(iats) > 0 else 1.0)),
-    }
-    
-    return features
-
-
-def _analyze_directions(packets: list[dict]) -> dict[str, Any]:
-    """Analyze packet directions based on IP pairs."""
-    if not packets:
-        return {"fwd_ratio": 0.5, "bwd_ratio": 0.5, "fwd_count": 0, "bwd_count": 0}
-    
-    # Use first packet's source as "forward" direction
-    first_src = packets[0].get("src_ip", "")
-    fwd = sum(1 for p in packets if p.get("src_ip") == first_src)
-    bwd = len(packets) - fwd
-    total = len(packets)
-    
-    return {
-        "fwd_ratio": fwd / total if total > 0 else 0.5,
-        "bwd_ratio": bwd / total if total > 0 else 0.5,
-        "fwd_count": fwd,
-        "bwd_count": bwd,
-    }
-
-
-def _detect_bursts(iats: list[float], threshold_factor: float = 3.0) -> dict[str, Any]:
-    """
-    Detect bursts in traffic based on inter-arrival time patterns.
-    A burst is a sequence of packets with IAT significantly below average.
-    """
-    if not iats or len(iats) < 2:
-        return {"count": 0, "avg_size": 0, "sizes": []}
-    
-    avg_iat = _mean(iats)
-    threshold = avg_iat / threshold_factor if avg_iat > 0 else 0.001
-    
-    bursts = []
-    current_burst = 0
-    
-    for iat in iats:
-        if iat < threshold:
-            current_burst += 1
-        else:
-            if current_burst > 1:
-                bursts.append(current_burst)
-            current_burst = 0
-    
-    if current_burst > 1:
-        bursts.append(current_burst)
-    
-    return {
-        "count": len(bursts),
-        "avg_size": _mean(bursts) if bursts else 0,
-        "sizes": bursts,
-    }
-
-
-# --- Statistical helpers ---
-
-def _mean(values: list) -> float:
-    if not values:
-        return 0.0
-    return sum(values) / len(values)
-
-
-def _std(values: list) -> float:
-    if len(values) < 2:
-        return 0.0
-    m = _mean(values)
-    variance = sum((x - m) ** 2 for x in values) / (len(values) - 1)
-    return math.sqrt(variance)
-
-
-def _median(values: list) -> float:
-    if not values:
-        return 0.0
-    s = sorted(values)
-    n = len(s)
-    if n % 2 == 0:
-        return (s[n//2 - 1] + s[n//2]) / 2
-    return s[n//2]
-
-
-def _percentile(values: list, p: int) -> float:
-    if not values:
-        return 0.0
-    s = sorted(values)
-    k = (len(s) - 1) * p / 100
-    f = int(k)
-    c = f + 1
-    if c >= len(s):
-        return s[f]
-    return s[f] + (k - f) * (s[c] - s[f])
-
-
-def _entropy(values: list) -> float:
-    """Shannon entropy of value distribution (binned)."""
-    if not values or len(values) < 2:
-        return 0.0
-    
-    # Bin into 10 bins
-    min_v = min(values)
-    max_v = max(values)
-    if min_v == max_v:
-        return 0.0
-    
-    n_bins = min(10, len(set(values)))
-    bin_width = (max_v - min_v) / n_bins
-    
-    bins = [0] * n_bins
-    for v in values:
-        idx = min(int((v - min_v) / bin_width), n_bins - 1)
-        bins[idx] += 1
-    
-    total = sum(bins)
-    entropy = 0.0
-    for count in bins:
-        if count > 0:
-            p = count / total
-            entropy -= p * math.log2(p)
-    
-    return round(entropy, 4)
-
-
-# Feature names used by the ML model (order matters)
 FEATURE_NAMES = [
-    "packet_count", "size_mean", "size_std", "size_min", "size_max",
-    "size_median", "size_q1", "size_q3", "size_iqr",
-    "payload_mean", "payload_std",
-    "duration", "iat_mean", "iat_std", "iat_min", "iat_max",
-    "iat_median", "iat_cv",
-    "packet_rate", "byte_rate", "bits_per_second",
-    "fwd_ratio", "bwd_ratio", "fwd_packet_count", "bwd_packet_count",
-    "burst_count", "avg_burst_size", "burst_rate",
-    "size_entropy", "iat_regularity",
+    # volume
+    "pkt_rate", "byte_rate",
+    # size (ESP payload length)
+    "size_mean", "size_std", "size_min", "size_max", "size_q10", "size_q25",
+    "size_median", "size_q75", "size_q90",
+    "frac_small", "frac_large", "size_entropy", "distinct_size_ratio",
+    # timing
+    "iat_mean", "iat_std", "iat_cv", "iat_median", "iat_q90",
+    "frac_iat_under_2ms", "iat_regularity", "idle_frac",
+    # direction (canonical: down = heavier direction)
+    "down_pkt_frac", "down_byte_frac", "down_size_mean", "up_size_mean",
+    "down_iat_cv", "up_iat_cv",
+    # bursts
+    "burst_rate", "burst_len_mean", "burst_bytes_max",
+    # noise-robust structure (stable when other small flows share the SA)
+    "size_mode_share", "mode_iat_cv", "mode_iat_median", "byte_frac_large", "mid_frac", "large_iat_median",
 ]
 
 
+# ---------------------------------------------------------------- SA pairing
+
+def group_security_associations(esp_packets: list[dict]) -> dict[str, dict[str, Any]]:
+    """Group ESP packets by SPI (+ direction, since SPIs are chosen per receiver)."""
+    sas: dict[str, dict[str, Any]] = {}
+    for p in esp_packets:
+        spi = p.get("spi")
+        if spi is None:
+            continue
+        key = f"{spi}|{p.get('src_ip')}>{p.get('dst_ip')}"
+        sa = sas.get(key)
+        if sa is None:
+            sa = sas[key] = {
+                "key": key, "spi": spi, "src": p.get("src_ip"), "dst": p.get("dst_ip"),
+                "packets": [], "first_seen": p["timestamp"], "last_seen": p["timestamp"],
+            }
+        sa["packets"].append(p)
+        sa["first_seen"] = min(sa["first_seen"], p["timestamp"])
+        sa["last_seen"] = max(sa["last_seen"], p["timestamp"])
+    return sas
+
+
+def build_tunnels(esp_packets: list[dict]) -> list[dict[str, Any]]:
+    """Pair unidirectional SAs into bidirectional tunnels (greedy by time overlap)."""
+    sas = group_security_associations(esp_packets)
+    unpaired = sorted(sas.values(), key=lambda s: s["first_seen"])
+    used: set[str] = set()
+    tunnels = []
+
+    for sa in unpaired:
+        if sa["key"] in used:
+            continue
+        used.add(sa["key"])
+        best, best_overlap = None, -PAIRING_TOLERANCE
+        for other in unpaired:
+            if other["key"] in used or other["src"] != sa["dst"] or other["dst"] != sa["src"]:
+                continue
+            overlap = min(sa["last_seen"], other["last_seen"]) - max(sa["first_seen"], other["first_seen"])
+            if overlap > best_overlap:
+                best, best_overlap = other, overlap
+        if best is not None:
+            used.add(best["key"])
+
+        entries = [(p, 0) for p in sa["packets"]]
+        if best is not None:
+            entries.extend((p, 1) for p in best["packets"])
+        entries.sort(key=lambda e: e[0]["timestamp"])
+
+        tunnels.append({
+            # canonical id: independent of which direction happened to be seen first (live slices vs batch)
+            "id": "/".join(sorted((sa["spi"], best["spi"]))) if best else sa["spi"],
+            "spi_a": sa["spi"],
+            "spi_b": best["spi"] if best else None,
+            "peer_a": sa["src"],
+            "peer_b": sa["dst"],
+            "bidirectional": best is not None,
+            "packets": [p for p, _ in entries],
+            "dirs": [d for _, d in entries],
+            "first_seen": entries[0][0]["timestamp"],
+            "last_seen": entries[-1][0]["timestamp"],
+        })
+    return tunnels
+
+
+# ---------------------------------------------------------------- windows + features
+
+def extract_flow_features(parsed_data: dict[str, Any],
+                          window_seconds: float = WINDOW_SECONDS) -> list[dict[str, Any]]:
+    """Return one feature dict per (tunnel, time window) with ≥ MIN_WINDOW_PACKETS packets."""
+    esp_packets = [p for p in parsed_data.get("packets", [])
+                   if p.get("protocol_type") == "esp" and p.get("esp_payload_len")]
+    return extract_from_esp_packets(esp_packets, window_seconds)
+
+
+def extract_from_esp_packets(esp_packets: list[dict],
+                             window_seconds: float = WINDOW_SECONDS) -> list[dict[str, Any]]:
+    windows = []
+    for tunnel in build_tunnels(esp_packets):
+        packets, dirs = tunnel["packets"], tunnel["dirs"]
+        # Windows sit on an absolute time grid, so a live stream that only holds the last few
+        # seconds cuts exactly the same windows as the batch analysis of the whole capture.
+        buckets: dict[int, list[int]] = defaultdict(list)
+        for i, p in enumerate(packets):
+            buckets[int(p["timestamp"] // window_seconds)].append(i)
+        for idx in sorted(buckets):
+            chunk = buckets[idx]
+            if len(chunk) < MIN_WINDOW_PACKETS:
+                continue
+            feats = compute_window_features(
+                np.array([packets[i]["timestamp"] for i in chunk], dtype=float),
+                np.array([packets[i]["esp_payload_len"] for i in chunk], dtype=float),
+                np.array([dirs[i] for i in chunk], dtype=int),
+                window_seconds,
+            )
+            feats.update({
+                "flow_id": tunnel["id"],
+                "spi": tunnel["id"],
+                "peer_a": tunnel["peer_a"],
+                "peer_b": tunnel["peer_b"],
+                "window_index": idx,
+                "window_start": round(idx * window_seconds, 6),
+                "window_end": round((idx + 1) * window_seconds, 6),
+                "packet_count": len(chunk),
+            })
+            windows.append(feats)
+    return windows
+
+
+def compute_window_features(ts: np.ndarray, sizes: np.ndarray, dirs: np.ndarray,
+                            window_seconds: float = WINDOW_SECONDS) -> dict[str, float]:
+    """Direction-agnostic statistics over one window. Inputs must be time-sorted."""
+    n = len(ts)
+    span = max(float(ts[-1] - ts[0]), 1e-3)
+    duration = min(window_seconds, max(span, 1e-3))
+
+    iats = np.diff(ts) if n > 1 else np.array([0.0])
+    iat_mean = float(iats.mean())
+    iat_median = float(np.median(iats))
+
+    # canonical direction: the one carrying more bytes is "down"
+    bytes0 = float(sizes[dirs == 0].sum())
+    bytes1 = float(sizes[dirs == 1].sum())
+    down = 0 if bytes0 >= bytes1 else 1
+    down_mask = dirs == down
+    up_mask = ~down_mask
+
+    bursts = _bursts(iats, sizes)
+    hist, _ = np.histogram(np.clip(sizes, 0, 1599), bins=SIZE_BINS)
+    modal = _modal_structure(ts, sizes, dirs)
+    large = sizes > 1000
+    large_iats = np.diff(ts[large]) if large.sum() > 2 else np.array([])
+
+    return {
+        "size_mode_share": modal["share"],
+        "mode_iat_cv": modal["iat_cv"],
+        "mode_iat_median": modal["iat_median"],
+        "byte_frac_large": float(sizes[large].sum() / max(sizes.sum(), 1.0)),
+        "mid_frac": float(((sizes >= 150) & (sizes <= 1000)).mean()),
+        "large_iat_median": float(np.median(large_iats)) if len(large_iats) else 0.0,
+        "pkt_rate": n / duration,
+        "byte_rate": float(sizes.sum()) / duration,
+        "size_mean": float(sizes.mean()),
+        "size_std": float(sizes.std()),
+        "size_min": float(sizes.min()),
+        "size_max": float(sizes.max()),
+        "size_q10": float(np.percentile(sizes, 10)),
+        "size_q25": float(np.percentile(sizes, 25)),
+        "size_median": float(np.median(sizes)),
+        "size_q75": float(np.percentile(sizes, 75)),
+        "size_q90": float(np.percentile(sizes, 90)),
+        "frac_small": float((sizes < 150).mean()),
+        "frac_large": float((sizes > 1000).mean()),
+        "size_entropy": _entropy(hist),
+        "distinct_size_ratio": len(np.unique(sizes)) / n,
+        "iat_mean": iat_mean,
+        "iat_std": float(iats.std()),
+        "iat_cv": float(iats.std() / iat_mean) if iat_mean > 0 else 0.0,
+        "iat_median": iat_median,
+        "iat_q90": float(np.percentile(iats, 90)),
+        "frac_iat_under_2ms": float((iats < 0.002).mean()),
+        "iat_regularity": float((np.abs(iats - iat_median) <= 0.2 * iat_median).mean()) if iat_median > 0 else 0.0,
+        "idle_frac": float(iats[iats > IDLE_GAP].sum() / duration),
+        "down_pkt_frac": float(down_mask.mean()),
+        "down_byte_frac": max(bytes0, bytes1) / max(bytes0 + bytes1, 1.0),
+        "down_size_mean": float(sizes[down_mask].mean()) if down_mask.any() else 0.0,
+        "up_size_mean": float(sizes[up_mask].mean()) if up_mask.any() else 0.0,
+        "down_iat_cv": _cv(np.diff(ts[down_mask])),
+        "up_iat_cv": _cv(np.diff(ts[up_mask])),
+        "burst_rate": bursts["count"] / duration,
+        "burst_len_mean": bursts["len_mean"],
+        "burst_bytes_max": bursts["bytes_max"],
+    }
+
+
 def features_to_vector(features: dict) -> list[float]:
-    """Convert a feature dict to a numeric vector in the correct order."""
-    return [float(features.get(name, 0)) for name in FEATURE_NAMES]
+    return [float(features.get(name, 0.0)) for name in FEATURE_NAMES]
+
+
+# ---------------------------------------------------------------- helpers
+
+def _bursts(iats: np.ndarray, sizes: np.ndarray) -> dict[str, float]:
+    """A burst is a run of ≥3 packets separated by < BURST_GAP."""
+    lengths, byte_totals = [], []
+    run_len, run_bytes = 1, float(sizes[0])
+    for gap, size in zip(iats, sizes[1:]):
+        if gap < BURST_GAP:
+            run_len += 1
+            run_bytes += float(size)
+        else:
+            if run_len >= 3:
+                lengths.append(run_len)
+                byte_totals.append(run_bytes)
+            run_len, run_bytes = 1, float(size)
+    if run_len >= 3:
+        lengths.append(run_len)
+        byte_totals.append(run_bytes)
+    return {
+        "count": len(lengths),
+        "len_mean": float(np.mean(lengths)) if lengths else 0.0,
+        "bytes_max": float(max(byte_totals)) if byte_totals else 0.0,
+    }
+
+
+def _modal_structure(ts: np.ndarray, sizes: np.ndarray, dirs: np.ndarray) -> dict[str, float]:
+    """Share and timing regularity of the most common packet size (16-byte bins), in its busiest direction.
+
+    Constant-size media (RTP, ping) keeps a regular cadence here even when unrelated small flows
+    are multiplexed into the same SA and disturb the overall IAT statistics.
+    """
+    bins = (sizes // 16).astype(int)
+    values, counts = np.unique(bins, return_counts=True)
+    mode_bin = values[np.argmax(counts)]
+    in_mode = bins == mode_bin
+    share = float(in_mode.mean())
+    direction = 0 if (in_mode & (dirs == 0)).sum() >= (in_mode & (dirs == 1)).sum() else 1
+    mode_ts = ts[in_mode & (dirs == direction)]
+    if len(mode_ts) < 3:
+        return {"share": share, "iat_cv": 0.0, "iat_median": 0.0}
+    iats = np.diff(mode_ts)
+    return {"share": share, "iat_cv": _cv(iats), "iat_median": float(np.median(iats))}
+
+
+def _cv(values: np.ndarray) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = float(values.mean())
+    return float(values.std() / mean) if mean > 0 else 0.0
+
+
+def _entropy(hist: np.ndarray) -> float:
+    total = hist.sum()
+    if total == 0:
+        return 0.0
+    p = hist[hist > 0] / total
+    return float(-(p * np.log2(p)).sum())

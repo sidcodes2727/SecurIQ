@@ -1,0 +1,177 @@
+/* SecurIQ console — Blueprint-dark / Gotham inspired.
+   canvas #111418 · panel #1C2127 · raised #252A31 · border #383E47 · text #F6F7F9 · muted #ABB3BF · dim #738091
+   intents: blue #4C90F0 · green #3DCC91 · gold #FBD065 · orange #EC9A3C · red #F0686C · violet #AD7BE9 · teal #2AB6B0 */
+
+Screen {
+    background: #111418;
+    color: #F6F7F9;
+    scrollbar-background: #111418;
+    scrollbar-background-hover: #111418;
+    scrollbar-background-active: #111418;
+    scrollbar-color: #383E47;
+    scrollbar-color-hover: #4C90F0;
+    scrollbar-color-active: #4C90F0;
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 1;
+}
+
+#classification { height: 1; }
+#topbar { height: 1; background: #0B0E11; color: #ABB3BF; }
+
+#shell { height: 1fr; }
+
+/* ---- navigation rail */
+#nav { width: 27; background: #16191E; border-right: solid #383E47; }
+#nav.-hidden { display: none; }
+#nav-list { background: #16191E; border: none; padding: 0; height: 1fr; scrollbar-size-vertical: 0; }
+#nav-list:focus { border: none; background-tint: transparent; }
+#nav-list > .option-list--option { padding: 0 1; }
+#nav-list > .option-list--option-highlighted { background: #1F3A66; color: #F6F7F9; text-style: none; }
+#nav-list:focus > .option-list--option-highlighted { background: #2D72D2; }
+#nav-list > .option-list--option-disabled { color: #738091; }
+#nav-foot { height: 1; color: #738091; padding: 0 1; }
+
+#views { width: 1fr; height: 1fr; }
+View, #views > Vertical { height: 1fr; }
+
+/* ---- generic building blocks */
+.side-title { color: #738091; text-style: bold; padding: 0 1; height: 1; background: #16191E; width: 100%; }
+.dialog-title { color: #4C90F0; text-style: bold; margin-bottom: 1; }
+.hint { color: #738091; margin-top: 1; }
+.knob-group { color: #738091; text-style: bold; margin-top: 1; padding: 0 1; }
+.knob-label { color: #ABB3BF; padding: 0 1; height: 1; }
+
+Static { background: transparent; }
+
+Input {
+    background: #1C2127; border: tall #383E47; color: #F6F7F9; padding: 0 1;
+}
+Input:focus { border: tall #4C90F0; background: #1C2127; }
+Input > .input--placeholder { color: #738091; }
+Input > .input--cursor { background: #4C90F0; color: #111418; }
+
+DataTable {
+    background: #111418; color: #ABB3BF; height: 1fr; scrollbar-gutter: stable;
+}
+DataTable > .datatable--header { background: #1C2127; color: #738091; text-style: bold; }
+DataTable > .datatable--cursor { background: #2D72D2; color: #F6F7F9; text-style: bold; }
+DataTable:focus > .datatable--cursor { background: #2D72D2; }
+DataTable > .datatable--hover { background: #252A31; }
+DataTable > .datatable--even-row { background: #14181D; }
+DataTable > .datatable--odd-row { background: #111418; }
+DataTable > .datatable--fixed { background: #1C2127; }
+
+OptionList { background: #16191E; border: none; color: #ABB3BF; padding: 0; }
+OptionList:focus { border: none; }
+OptionList > .option-list--option-highlighted { background: #252A31; color: #F6F7F9; }
+OptionList:focus > .option-list--option-highlighted { background: #2D72D2; }
+
+Button {
+    background: #252A31; color: #F6F7F9; border: none; height: 3; min-width: 12; margin: 0 1 0 0;
+    text-style: bold; border-top: none; border-bottom: none;
+}
+Button:hover { background: #2F343C; }
+Button.-primary { background: #2D72D2; }
+Button.-primary:hover { background: #4C90F0; }
+Button.-warning { background: #C87619; }
+Button.-warning:hover { background: #EC9A3C; }
+Button.-error { background: #AC2F33; }
+Button.-error:hover { background: #CD4246; }
+
+Select { width: 32; background: #1C2127; }
+SelectCurrent { background: #1C2127; border: tall #383E47; color: #F6F7F9; }
+Select:focus > SelectCurrent { border: tall #4C90F0; }
+SelectOverlay { background: #1C2127; border: tall #4C90F0; }
+SelectOverlay > .option-list--option-highlighted { background: #2D72D2; }
+Select.-textual-compact { height: 1; width: 1fr; }
+Select.-textual-compact > SelectCurrent { height: 1; border: none !important; padding: 0 1; background: #1C2127; }
+Select.-textual-compact:focus > SelectCurrent { border: none; background: #252A31; }
+Select.-textual-compact SelectCurrent .arrow { color: #4C90F0; }
+
+/* ---- tabs */
+TabbedContent { height: 1fr; }
+Tabs { background: #111418; height: 2; }
+Tab { background: #111418; color: #738091; padding: 0 2; text-style: bold; }
+Tab:hover { color: #F6F7F9; background: #16191E; }
+Tab.-active { color: #4C90F0; background: #111418; }
+Underline > .underline--bar { color: #4C90F0; background: #383E47; }
+TabPane { padding: 0; height: 1fr; }
+ContentTabs { height: 2; }
+
+/* ---- modals */
+ModalScreen { align: center middle; background: #111418 70%; }
+.dialog { width: 72; height: auto; max-height: 80%; background: #1C2127; border: heavy #4C90F0; padding: 1 2; }
+.dialog.wide { width: 100; height: 32; }
+.dialog #open-list { height: 1fr; margin-top: 1; background: #16191E; }
+
+/* ---- boot sequence */
+BootScreen { align: center middle; background: #0B0E11; }
+#boot { width: 110; height: auto; background: #0B0E11; border: none; padding: 1 2; }
+#boot-log { margin-top: 1; height: auto; }
+
+/* ---- dashboard animation */
+#dash-ticker { height: 1; background: #0B0E11; }
+
+/* ---- footer */
+Footer { background: #0B0E11; }
+Footer > .footer--key { color: #4C90F0; background: #0B0E11; text-style: bold; }
+Footer > .footer--description { color: #738091; background: #0B0E11; }
+Footer > .footer--highlight { background: #252A31; }
+
+Toast { background: #1C2127; border-left: thick #4C90F0; color: #F6F7F9; }
+Toast.-error { border-left: thick #F0686C; }
+Toast.-warning { border-left: thick #FBD065; }
+Toast.-information { border-left: thick #4C90F0; }
+
+/* ---- explorer */
+#ex-query { margin: 0 1; }
+#ex-status { height: 1; padding: 0 1; color: #738091; }
+#ex-body { height: 1fr; }
+#ex-table { width: 1fr; }
+#ex-side { width: 42; border-left: solid #383E47; background: #14181D; }
+#ex-facets { height: 12; background: #14181D; }
+#ex-side VerticalScroll { height: 1fr; padding: 0 1; }
+
+/* ---- graph */
+#g-main { width: 1fr; }
+#g-legend { height: 1; background: #16191E; }
+#g-canvas { height: 1fr; background: #0E1216; padding: 0; }
+#g-canvas:focus { background: #0E1216; border: none; }
+#g-side { width: 46; border-left: solid #383E47; background: #14181D; }
+#g-detail-scroll { height: 1fr; padding: 0 1; }
+#g-side VerticalScroll { padding: 0 1; }
+
+/* ---- inbox */
+#in-counts { padding: 0 1; height: 4; }
+#in-body { height: 1fr; }
+#in-table { width: 1fr; }
+#in-side { width: 62; border-left: solid #383E47; background: #14181D; padding: 0 1; }
+
+/* ---- workspace */
+#ws-head { height: 1; background: #16191E; }
+#fd-table { width: 52; }
+#fd-side { width: 1fr; padding: 0 1; }
+#sim-form { width: 40; border-right: solid #383E47; background: #14181D; padding: 0 1; }
+#sim-main { width: 1fr; }
+#sim-buttons { height: 3; padding: 0 1; }
+#rp-buttons { height: 3; padding: 0 1; }
+
+/* ---- live */
+#live-controls { height: 3; padding: 0 1; align-vertical: middle; }
+#live-controls Select { width: 30; margin-right: 1; height: 1; }
+#live-controls #live-speed { width: 10; }
+
+/* ---- lab */
+#lab-side { width: 44; border-right: solid #383E47; background: #14181D; }
+#lab-side KnobForm { height: 1fr; padding: 0 1; }
+#lab-main { width: 1fr; }
+#lab-controls { height: 3; padding: 0 1; }
+#lab-controls Input { width: 1fr; margin-right: 1; }
+#lab-controls Select { width: 22; margin-top: 1; }
+#lab-buttons { height: 3; padding: 0 1; }
+
+/* ---- testbed / policy */
+#tb-side { width: 38; border-right: solid #383E47; background: #14181D; }
+#tb-actions { height: 1fr; background: #14181D; }
+#tb-main { padding: 0 1; }
+#pol-side { width: 70; border-right: solid #383E47; }

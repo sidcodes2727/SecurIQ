@@ -1,79 +1,31 @@
 #!/bin/bash
-# ============================================
-# IPsec VPN Protocol Analyzer - Setup Script
-# ============================================
+# SecurIQ setup (Linux / macOS / WSL). Windows PowerShell: .\setup.ps1
+# Installs the `securiq` terminal command. The React web UI is optional (needs Node.js 18+).
 set -e
+cd "$(dirname "$0")"
 
-echo "============================================"
-echo "  IPsec VPN Protocol Analyzer Setup"
-echo "============================================"
-echo ""
+echo "[1/4] Python environment + the securiq command"
+command -v python3 >/dev/null || { echo "Python 3.9+ is required"; exit 1; }
+python3 -m venv backend/venv
+backend/venv/bin/python -m pip install --quiet --upgrade pip
+backend/venv/bin/python -m pip install --quiet -r backend/requirements.txt
+backend/venv/bin/python -m pip install --quiet -e .
 
-# Colors
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+echo "[2/4] Tests"
+(cd backend && ./venv/bin/python -m pytest -q)
 
-# Check Python
-echo -e "${CYAN}[1/6] Checking Python...${NC}"
-if ! command -v python3 &> /dev/null; then
-    echo "Python 3 is required. Please install Python 3.9+."
-    exit 1
+echo "[3/4] First-run data (testbed captures + classifier, ~30 s)"
+backend/venv/bin/securiq init
+
+echo "[4/4] Optional web UI"
+if command -v npm >/dev/null; then
+  (cd frontend && npm install --silent)
+  WEB="  web:       backend/venv/bin/python -m uvicorn backend.main:app --port 8000   and   cd frontend && npm run dev"
+else
+  WEB="  web:       skipped (Node.js not found); the terminal package is complete without it"
 fi
-PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-echo -e "${GREEN}  ✓ Python $PYTHON_VERSION${NC}"
 
-# Check Node.js
-echo -e "${CYAN}[2/6] Checking Node.js...${NC}"
-if ! command -v node &> /dev/null; then
-    echo "Node.js is required. Please install Node.js 18+."
-    exit 1
-fi
-NODE_VERSION=$(node --version)
-echo -e "${GREEN}  ✓ Node.js $NODE_VERSION${NC}"
-
-# Backend setup
-echo -e "${CYAN}[3/6] Setting up backend...${NC}"
-cd backend
-python3 -m venv venv 2>/dev/null || true
-source venv/bin/activate 2>/dev/null || true
-pip install -r requirements.txt --quiet
-echo -e "${GREEN}  ✓ Backend dependencies installed${NC}"
-cd ..
-
-# Frontend setup
-echo -e "${CYAN}[4/6] Setting up frontend...${NC}"
-cd frontend
-npm install --silent 2>/dev/null
-echo -e "${GREEN}  ✓ Frontend dependencies installed${NC}"
-cd ..
-
-# Run tests
-echo -e "${CYAN}[5/6] Running backend tests...${NC}"
-cd backend
-python3 -m pytest tests/ -v --tb=short 2>&1 || echo "  ⚠ Some tests may need the full setup to pass"
-cd ..
-
-echo -e "${CYAN}[6/6] Setup complete!${NC}"
-echo ""
-echo "============================================"
-echo -e "${GREEN}  Setup Complete! 🎉${NC}"
-echo "============================================"
-echo ""
-echo "To start the application:"
-echo ""
-echo "  1. Start the backend (from the project root):"
-echo "     source backend/venv/bin/activate"
-echo "     uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000"
-echo ""
-echo "  2. Start the frontend (in another terminal):"
-echo "     cd frontend"
-echo "     npm run dev"
-echo ""
-echo "  3. Open http://localhost:5173 in your browser"
-echo ""
-echo "The backend will automatically:"
-echo "  - Generate sample PCAP files"
-echo "  - Generate synthetic training dataset"
-echo "  - Train the ML model"
-echo ""
+echo
+echo "Done. Start the console:"
+echo "  backend/venv/bin/securiq          (or activate the venv:  source backend/venv/bin/activate && securiq)"
+echo "$WEB"

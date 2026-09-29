@@ -1,0 +1,8 @@
+# Scripts and configs executed inside Linux containers must keep LF line endings on Windows checkouts.
+*.sh        text eol=lf
+*.tmpl      text eol=lf
+*.env       text eol=lf
+Dockerfile  text eol=lf
+*.conf      text eol=lf
+*.pcap      binary
+*.pcapng    binary

@@ -26,6 +26,8 @@ backend/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+build/
+*.egg-info/
 .coverage
 htmlcov/
 
@@ -38,3 +40,6 @@ backend/data/
 # Environment Variables
 .env
 .env.local
+
+# strongSwan lab output
+backend/testbed/strongswan/captures/
